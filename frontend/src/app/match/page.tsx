@@ -600,15 +600,30 @@ export default function MatchPage() {
   if (pageState === "queue") {
     return (
       <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8">
-        <div className="text-center py-16">
-          <h1 className="font-pixel text-sm sm:text-base text-white mb-6 tracking-wider" style={{ textShadow: "3px 3px 0 #0B6623" }}>
+        <div className="text-center py-16 relative">
+          {/* Background pitch silhouette */}
+          <div className="absolute inset-0 flex items-center justify-center opacity-5 pointer-events-none">
+            <div className="w-64 h-40 border-2 border-white relative">
+              <div className="absolute left-1/2 top-0 w-[2px] h-full bg-white" />
+              <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-12 h-12 rounded-full border-2 border-white" />
+            </div>
+          </div>
+
+          <h1 className="font-pixel text-sm sm:text-base text-white mb-6 tracking-wider relative" style={{ textShadow: "3px 3px 0 #0B6623" }}>
             MATCH CENTER
           </h1>
 
-          <div className="pixel-card-gold p-8 max-w-md mx-auto">
-            <div className="font-pixel text-3xl text-white mb-4 animate-pulse" style={{ textShadow: "3px 3px 0 #0B6623" }}>
-              ...
+          <div className="pixel-card-gold p-8 max-w-md mx-auto relative">
+            {/* Pulsing radar animation */}
+            <div className="relative w-16 h-16 mx-auto mb-4">
+              <div className="absolute inset-0 rounded-full border-2 border-[#1E8F4E]/30 animate-ping" />
+              <div className="absolute inset-2 rounded-full border-2 border-[#1E8F4E]/50 animate-ping" style={{ animationDelay: "0.5s" }} />
+              <div className="absolute inset-4 rounded-full border-2 border-[#1E8F4E] animate-pulse" />
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="w-3 h-3 bg-[#1E8F4E] rounded-full" style={{ boxShadow: "0 0 10px #1E8F4E" }} />
+              </div>
             </div>
+
             <h2 className="font-pixel text-[10px] text-white mb-2 tracking-wider">
               SEARCHING FOR OPPONENT
             </h2>
@@ -616,7 +631,7 @@ export default function MatchPage() {
               WAITING FOR ANOTHER PLAYER TO JOIN
             </p>
 
-            <div className="font-pixel text-lg text-white/60 mb-6">
+            <div className="font-pixel text-lg text-white/60 mb-6" style={{ textShadow: "1px 1px 0 #0B6623" }}>
               {Math.floor(queueTime / 60)}:{String(queueTime % 60).padStart(2, "0")}
             </div>
 
@@ -633,38 +648,83 @@ export default function MatchPage() {
   if (pageState === "pre-match") {
     return (
       <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8">
-        <div className="text-center py-16">
-          <h1 className="font-pixel text-sm sm:text-base text-white mb-8 tracking-wider" style={{ textShadow: "3px 3px 0 #0B6623" }}>
-            MATCH FOUND!
-          </h1>
-
-          <div className="flex items-center justify-center gap-8 max-w-lg mx-auto">
-            <div className="pixel-card p-6 flex-1 text-center animate-[slide-up_0.5s_ease-out]">
-              <div className="font-pixel text-[6px] text-white/40 mb-2 tracking-wider">
-                {mySide === "home" ? "HOME" : "AWAY"}
-              </div>
-              <div className="font-pixel text-[9px] text-white tracking-wider">
-                {myTeamName || "YOU"}
-              </div>
-            </div>
-
-            <div className="font-pixel text-xl text-white animate-pulse" style={{ textShadow: "3px 3px 0 #0B6623" }}>
-              VS
-            </div>
-
-            <div className="pixel-card p-6 flex-1 text-center animate-[slide-up_0.5s_ease-out_0.2s_both]">
-              <div className="font-pixel text-[6px] text-white/40 mb-2 tracking-wider">
-                {mySide === "home" ? "AWAY" : "HOME"}
-              </div>
-              <div className="font-pixel text-[9px] text-white tracking-wider">
-                {opponentName}
-              </div>
-            </div>
+        <div className="relative">
+          {/* Background pitch */}
+          <div
+            className="absolute inset-0 opacity-15 pointer-events-none"
+            style={{
+              background: "linear-gradient(180deg, #0B6623 0%, #0a5a1f 50%, #0B6623 100%)",
+              border: "2px solid #1E8F4E20",
+            }}
+          >
+            <div className="absolute left-1/2 top-0 w-[1px] h-full bg-white/20" />
+            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-20 h-20 rounded-full border border-white/20" />
           </div>
 
-          <p className="font-pixel text-[7px] text-white/30 mt-8 tracking-wider animate-pulse">
-            MATCH STARTING...
-          </p>
+          <div className="text-center py-12 relative">
+            <div className="font-pixel text-[7px] text-[#00AEEF] mb-4 tracking-[0.3em] animate-pulse">
+              MATCH FOUND
+            </div>
+
+            <div className="flex items-center justify-center gap-6 sm:gap-10 max-w-lg mx-auto mb-8">
+              {/* Home */}
+              <div className="flex-1 animate-[slide-up_0.4s_ease-out]">
+                <div
+                  className="pixel-card p-4 sm:p-6 text-center"
+                  style={{ borderColor: "#1E8F4E" }}
+                >
+                  <div className="font-pixel text-[6px] text-[#1E8F4E] mb-2 tracking-wider">
+                    {mySide === "home" ? "YOU" : "OPPONENT"}
+                  </div>
+                  <div className="font-pixel text-[8px] sm:text-[10px] text-white tracking-wider">
+                    {mySide === "home" ? (myTeamName || "YOUR SQUAD") : opponentName}
+                  </div>
+                  <div className="mt-3 flex justify-center gap-1">
+                    {[...Array(5)].map((_, i) => (
+                      <div key={i} className="w-1.5 h-2 bg-[#1E8F4E]" style={{ opacity: 0.4 + i * 0.15 }} />
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* VS */}
+              <div className="text-center">
+                <div
+                  className="font-pixel text-lg sm:text-xl text-white"
+                  style={{
+                    textShadow: "0 0 20px #1E8F4E, 3px 3px 0 #0B6623",
+                    animation: "pulse 1s ease-in-out infinite",
+                  }}
+                >
+                  VS
+                </div>
+              </div>
+
+              {/* Away */}
+              <div className="flex-1 animate-[slide-up_0.4s_ease-out_0.15s_both]">
+                <div
+                  className="pixel-card p-4 sm:p-6 text-center"
+                  style={{ borderColor: "#FF3B3B" }}
+                >
+                  <div className="font-pixel text-[6px] text-[#FF3B3B] mb-2 tracking-wider">
+                    {mySide === "away" ? "YOU" : "OPPONENT"}
+                  </div>
+                  <div className="font-pixel text-[8px] sm:text-[10px] text-white tracking-wider">
+                    {mySide === "away" ? (myTeamName || "YOUR SQUAD") : opponentName}
+                  </div>
+                  <div className="mt-3 flex justify-center gap-1">
+                    {[...Array(5)].map((_, i) => (
+                      <div key={i} className="w-1.5 h-2 bg-[#FF3B3B]" style={{ opacity: 0.4 + i * 0.15 }} />
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="font-pixel text-[8px] text-white/30 tracking-[0.2em] animate-pulse">
+              KICK OFF IN 3...
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -685,6 +745,7 @@ export default function MatchPage() {
         homeName={homeName}
         awayName={awayName}
         isPlaying={pageState === "playing"}
+        mySide={mySide}
       />
 
       {/* Event feed */}
@@ -726,94 +787,144 @@ export default function MatchPage() {
       </div>
 
       {/* Post-match stats */}
-      {pageState === "finished" && matchResult && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-          {/* Stats */}
-          <div className="pixel-card p-4">
-            <h3 className="font-pixel text-[8px] text-white mb-4 tracking-wider">MATCH STATS</h3>
-            {[
-              { label: "POSSESSION", home: `${matchResult.result.possession.home}%`, away: `${matchResult.result.possession.away}%` },
-              { label: "SHOTS", home: matchResult.result.shots.home, away: matchResult.result.shots.away },
-              { label: "ON TARGET", home: matchResult.result.shotsOnTarget.home, away: matchResult.result.shotsOnTarget.away },
-            ].map(stat => (
-              <div key={stat.label} className="flex items-center justify-between py-2" style={{ borderBottom: "1px solid #222" }}>
-                <span className="font-pixel text-[7px] text-white w-10 text-left">{String(stat.home)}</span>
-                <span className="font-pixel text-[6px] text-white/40 flex-1 text-center tracking-wider">{stat.label}</span>
-                <span className="font-pixel text-[7px] text-white w-10 text-right">{String(stat.away)}</span>
-              </div>
-            ))}
+      {pageState === "finished" && matchResult && (() => {
+        const myScore = mySide === "home" ? homeScore : awayScore;
+        const theirScore = mySide === "home" ? awayScore : homeScore;
+        const resultText = myScore > theirScore ? "VICTORY!" : myScore < theirScore ? "DEFEAT" : "DRAW";
+        const resultColor = myScore > theirScore ? "#1E8F4E" : myScore < theirScore ? "#ef4444" : "#eab308";
+        const maxShots = Math.max(matchResult.result.shots.home, matchResult.result.shots.away, 1);
 
-            {/* Points + ELO */}
-            <div className="mt-4 pt-3 space-y-2" style={{ borderTop: "2px solid #333" }}>
-              <div className="flex items-center justify-center gap-2">
-                <span className="font-pixel text-[7px] text-white/50 tracking-wider">POINTS:</span>
-                <span className="font-pixel text-sm text-white" style={{ textShadow: "2px 2px 0 #0B6623" }}>
-                  +{matchResult.pointsEarned}
-                </span>
+        return (
+          <div className="space-y-4 animate-[fade-in_0.5s_ease-out]">
+            {/* Stats with visual bars */}
+            <div className="pixel-card p-4">
+              <h3 className="font-pixel text-[8px] text-white mb-4 tracking-wider">MATCH STATS</h3>
+
+              {/* Possession bar */}
+              <div className="mb-4">
+                <div className="flex justify-between mb-1.5">
+                  <span className="font-pixel text-[8px] text-white">{matchResult.result.possession.home}%</span>
+                  <span className="font-pixel text-[6px] text-white/40 tracking-wider">POSSESSION</span>
+                  <span className="font-pixel text-[8px] text-white">{matchResult.result.possession.away}%</span>
+                </div>
+                <div className="flex h-[6px] overflow-hidden" style={{ imageRendering: "pixelated" }}>
+                  <div className="h-full bg-[#1E8F4E] transition-all duration-1000" style={{ width: `${matchResult.result.possession.home}%` }} />
+                  <div className="h-full bg-[#FF3B3B] transition-all duration-1000" style={{ width: `${matchResult.result.possession.away}%` }} />
+                </div>
               </div>
-              <div className="flex items-center justify-center gap-2">
-                <span className="font-pixel text-[7px] text-white/50 tracking-wider">ELO:</span>
-                <span className="font-pixel text-[9px]" style={{
-                  color: matchResult.eloChange >= 0 ? "#1E8F4E" : "#ef4444",
-                  textShadow: "1px 1px 0 rgba(0,0,0,0.8)",
-                }}>
-                  {matchResult.eloChange >= 0 ? "+" : ""}{matchResult.eloChange}
-                </span>
+
+              {/* Shots */}
+              <div className="mb-3">
+                <div className="flex justify-between mb-1.5">
+                  <span className="font-pixel text-[8px] text-white">{matchResult.result.shots.home}</span>
+                  <span className="font-pixel text-[6px] text-white/40 tracking-wider">SHOTS</span>
+                  <span className="font-pixel text-[8px] text-white">{matchResult.result.shots.away}</span>
+                </div>
+                <div className="flex gap-1 h-[6px]" style={{ imageRendering: "pixelated" }}>
+                  <div className="flex-1 flex justify-end">
+                    <div className="h-full bg-[#1E8F4E] transition-all duration-1000" style={{ width: `${(matchResult.result.shots.home / maxShots) * 100}%` }} />
+                  </div>
+                  <div className="flex-1">
+                    <div className="h-full bg-[#FF3B3B] transition-all duration-1000" style={{ width: `${(matchResult.result.shots.away / maxShots) * 100}%` }} />
+                  </div>
+                </div>
               </div>
-              <div className="flex items-center justify-center gap-2">
-                <span className="font-pixel text-[7px] text-white/50 tracking-wider">XP:</span>
-                <span className="font-pixel text-[9px] text-[#00E5FF]">
-                  +{matchResult.xpGain}
-                </span>
+
+              {/* Shots on target */}
+              <div className="mb-3">
+                <div className="flex justify-between mb-1.5">
+                  <span className="font-pixel text-[8px] text-white">{matchResult.result.shotsOnTarget.home}</span>
+                  <span className="font-pixel text-[6px] text-white/40 tracking-wider">ON TARGET</span>
+                  <span className="font-pixel text-[8px] text-white">{matchResult.result.shotsOnTarget.away}</span>
+                </div>
+                <div className="flex gap-1 h-[6px]" style={{ imageRendering: "pixelated" }}>
+                  <div className="flex-1 flex justify-end">
+                    <div className="h-full bg-[#1E8F4E] transition-all duration-1000" style={{ width: `${(matchResult.result.shotsOnTarget.home / maxShots) * 100}%` }} />
+                  </div>
+                  <div className="flex-1">
+                    <div className="h-full bg-[#FF3B3B] transition-all duration-1000" style={{ width: `${(matchResult.result.shotsOnTarget.away / maxShots) * 100}%` }} />
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
 
-          {/* MOTM + Play Again */}
-          <div className="pixel-card-gold p-4">
-            <h3 className="font-pixel text-[8px] text-white mb-3 tracking-wider">MAN OF THE MATCH</h3>
+            {/* Result + Rewards + MOTM row */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              {/* Result + Rewards */}
+              <div className="pixel-card p-4 text-center">
+                <div
+                  className="font-pixel text-sm sm:text-base tracking-[0.2em] mb-3"
+                  style={{ color: resultColor, textShadow: `0 0 15px ${resultColor}40, 2px 2px 0 rgba(0,0,0,0.8)` }}
+                >
+                  {resultText}
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-center gap-2">
+                    <span className="font-pixel text-[6px] text-white/40 tracking-wider">PTS</span>
+                    <span className="font-pixel text-[10px] text-white" style={{ textShadow: "1px 1px 0 #0B6623" }}>
+                      +{matchResult.pointsEarned}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-center gap-2">
+                    <span className="font-pixel text-[6px] text-white/40 tracking-wider">ELO</span>
+                    <span className="font-pixel text-[10px]" style={{
+                      color: matchResult.eloChange >= 0 ? "#1E8F4E" : "#ef4444",
+                    }}>
+                      {matchResult.eloChange >= 0 ? "+" : ""}{matchResult.eloChange}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-center gap-2">
+                    <span className="font-pixel text-[6px] text-white/40 tracking-wider">XP</span>
+                    <span className="font-pixel text-[10px] text-[#00E5FF]">+{matchResult.xpGain}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* MOTM */}
+              <div className="pixel-card-gold p-4 text-center">
+                <h3 className="font-pixel text-[7px] text-white/60 mb-2 tracking-wider">MAN OF THE MATCH</h3>
+                <div className="font-pixel text-lg text-[#FFD700] mb-1" style={{ textShadow: "0 0 10px #FFD70040, 2px 2px 0 #0B6623" }}>
+                  *
+                </div>
+                <div className="font-pixel text-[9px] text-white tracking-wider">
+                  {matchResult.result.manOfTheMatch.playerName}
+                </div>
+                <div className="font-pixel text-[5px] text-white/30 mt-1 tracking-wider">
+                  {matchResult.result.manOfTheMatch.team === mySide ? "YOUR TEAM" : "OPPONENT"}
+                </div>
+                <div className="font-pixel text-base text-[#FFD700] mt-2" style={{ textShadow: "2px 2px 0 #0B6623" }}>
+                  {matchResult.result.manOfTheMatch.rating.toFixed(1)}
+                </div>
+              </div>
+
+              {/* Goal scorers */}
+              <div className="pixel-card p-4">
+                <h3 className="font-pixel text-[7px] text-white/60 mb-3 tracking-wider">GOAL SCORERS</h3>
+                {displayedEvents.filter(e => e.type === "goal").length === 0 ? (
+                  <div className="font-pixel text-[7px] text-white/20 text-center tracking-wider">NO GOALS</div>
+                ) : (
+                  <div className="space-y-1.5">
+                    {displayedEvents.filter(e => e.type === "goal").map((e, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <div className="w-1.5 h-1.5 shrink-0" style={{ backgroundColor: e.team === "home" ? "#1E8F4E" : "#FF3B3B" }} />
+                        <span className="font-pixel text-[6px] text-white tracking-wider truncate">{e.playerName}</span>
+                        <span className="font-pixel text-[5px] text-white/30 ml-auto shrink-0">{e.minute}&apos;</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Play again */}
             <div className="text-center">
-              <div className="font-pixel text-lg text-white mb-2" style={{ textShadow: "2px 2px 0 #0B6623" }}>*</div>
-              <div className="font-pixel text-[9px] text-white tracking-wider">
-                {matchResult.result.manOfTheMatch.playerName}
-              </div>
-              <div className="font-pixel text-[6px] text-white/40 mt-1 tracking-wider">
-                {matchResult.result.manOfTheMatch.team === mySide ? "YOUR TEAM" : "OPPONENT"}
-              </div>
-              <div className="font-pixel text-lg text-white mt-2" style={{ textShadow: "2px 2px 0 #0B6623" }}>
-                {matchResult.result.manOfTheMatch.rating.toFixed(1)}
-              </div>
-
-              {/* Result banner */}
-              <div className="mt-4 mb-4">
-                {(() => {
-                  const myScore = mySide === "home" ? homeScore : awayScore;
-                  const theirScore = mySide === "home" ? awayScore : homeScore;
-                  if (myScore > theirScore) return (
-                    <div className="font-pixel text-sm text-[#1E8F4E] tracking-wider" style={{ textShadow: "2px 2px 0 rgba(0,0,0,0.8)" }}>
-                      VICTORY!
-                    </div>
-                  );
-                  if (myScore === theirScore) return (
-                    <div className="font-pixel text-sm text-[#eab308] tracking-wider" style={{ textShadow: "2px 2px 0 rgba(0,0,0,0.8)" }}>
-                      DRAW
-                    </div>
-                  );
-                  return (
-                    <div className="font-pixel text-sm text-[#ef4444] tracking-wider" style={{ textShadow: "2px 2px 0 rgba(0,0,0,0.8)" }}>
-                      DEFEAT
-                    </div>
-                  );
-                })()}
-              </div>
-
-              <button onClick={backToLobby} className="pixel-btn text-[8px] w-full">
+              <button onClick={backToLobby} className="pixel-btn text-[9px] px-10 py-3">
                 PLAY AGAIN
               </button>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
