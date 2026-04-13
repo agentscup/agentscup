@@ -110,6 +110,9 @@ const GOAL_PHRASES = [
 ];
 const TACKLE_PHRASES = ["with a crunching tackle", "slides in to win the ball", "reads the play perfectly", "intercepts brilliantly"];
 const PASS_PHRASES = ["plays a delightful through ball", "whips in a cross", "threads the needle", "picks out", "lofts a ball to"];
+const FOUL_PHRASES = ["brings down", "fouls", "clips the heels of", "body-checks", "trips"];
+const DRIBBLE_PHRASES = ["goes on a mazy run", "dances past defenders", "carries the ball forward", "surges down the wing", "drives into space"];
+const MIDFIELD_PHRASES = ["wins the ball in midfield", "controls possession", "recycles play", "switches the ball to the other flank", "presses high up the pitch"];
 
 export function simulateMatch(home: SquadInput, away: SquadInput, seed: number): MatchResult {
   const rng = createRNG(seed);
@@ -176,6 +179,7 @@ export function simulateMatch(home: SquadInput, away: SquadInput, seed: number):
     else awayPossCount++;
 
     const attackTeam: "home" | "away" = isHomePoss ? "home" : "away";
+    const defendTeam: "home" | "away" = isHomePoss ? "away" : "home";
     const attackMid = isHomePoss ? homeMID : awayMID;
     const attackFwd = isHomePoss ? homeFWD : awayFWD;
     const defMid = isHomePoss ? awayMID : homeMID;
@@ -198,12 +202,32 @@ export function simulateMatch(home: SquadInput, away: SquadInput, seed: number):
       });
     }
 
-    // Midfield battle — chance of an attack developing
-    const attackChance = 0.15 + (midStr - defMidStr) / 500;
-    if (rng() > attackChance) continue;
+    // Midfield battle — chance of an attack developing (much higher now)
+    const attackChance = 0.38 + (midStr - defMidStr) / 400;
+    if (rng() > attackChance) {
+      // Even when no attack develops, show midfield activity (~40% of non-attack minutes)
+      if (rng() < 0.40) {
+        const allMid = isHomePoss ? homeMID : awayMID;
+        const allDef = isHomePoss ? homeDEF : awayDEF;
+        const pool = [...allMid, ...allDef];
+        if (pool.length > 0) {
+          const player = pickRandom(pool, rng);
+          events.push({
+            minute,
+            type: "possession_change",
+            team: attackTeam,
+            playerName: player.name,
+            description: `${player.name} ${pickRandom(MIDFIELD_PHRASES, rng)}`,
+          });
+        }
+      }
+      continue;
+    }
 
-    // Pass event
-    if (attackMid.length > 0 && attackFwd.length > 0 && rng() < 0.4) {
+    // ─── Attack phase ──────────────────────────────────────
+
+    // Pass event (more frequent)
+    if (attackMid.length > 0 && attackFwd.length > 0 && rng() < 0.55) {
       const passer = pickRandom(attackMid, rng);
       const target = pickRandom(attackFwd, rng);
       events.push({
@@ -217,36 +241,65 @@ export function simulateMatch(home: SquadInput, away: SquadInput, seed: number):
       addPerf(attackTeam, passer.name, 1);
     }
 
-    // Tackle event
-    if (defDEF.length > 0 && rng() < 0.35) {
+    // Dribble event
+    if (attackFwd.length > 0 && rng() < 0.25) {
+      const dribbler = pickRandom(attackFwd, rng);
+      events.push({
+        minute,
+        type: "pass",
+        team: attackTeam,
+        playerName: dribbler.name,
+        description: `${dribbler.name} ${pickRandom(DRIBBLE_PHRASES, rng)}!`,
+      });
+      addPerf(attackTeam, dribbler.name, 1);
+    }
+
+    // Tackle / Foul event
+    if (defDEF.length > 0 && rng() < 0.45) {
       const defender = pickRandom(defDEF, rng);
       const attacker = attackFwd.length > 0 ? pickRandom(attackFwd, rng) : pickRandom(attackMid, rng);
       const tackleSuccess = rng() < (defender.defending / (defender.defending + attacker.dribbling));
 
       if (tackleSuccess) {
-        events.push({
-          minute,
-          type: "tackle",
-          team: attackTeam === "home" ? "away" : "home",
-          playerName: defender.name,
-          targetPlayerName: attacker.name,
-          description: `${defender.name} ${pickRandom(TACKLE_PHRASES, rng)} on ${attacker.name}`,
-        });
-        addPerf(attackTeam === "home" ? "away" : "home", defender.name, 2);
-
-        // Yellow card chance on tackle
-        if (rng() < 0.015) {
-          cardCount++;
-          const isRed = rng() < 0.13;
+        // Clean tackle or foul?
+        if (rng() < 0.3) {
+          // Foul
           events.push({
             minute,
-            type: isRed ? "red_card" : "yellow_card",
-            team: attackTeam === "home" ? "away" : "home",
+            type: "tackle",
+            team: defendTeam,
             playerName: defender.name,
-            description: `${isRed ? "RED" : "YELLOW"} CARD for ${defender.name}! ${isRed ? "Sent off!" : "Goes into the book."}`,
+            targetPlayerName: attacker.name,
+            description: `${defender.name} ${pickRandom(FOUL_PHRASES, rng)} ${attacker.name}. Free kick!`,
           });
+
+          // Card chance on foul
+          if (rng() < 0.12) {
+            cardCount++;
+            const isRed = rng() < 0.08;
+            events.push({
+              minute,
+              type: isRed ? "red_card" : "yellow_card",
+              team: defendTeam,
+              playerName: defender.name,
+              description: `${isRed ? "RED" : "YELLOW"} CARD for ${defender.name}! ${isRed ? "Sent off!" : "Goes into the book."}`,
+            });
+          }
+          // Free kick doesn't always stop the play — 40% leads to a shot
+          if (rng() > 0.4) continue;
+        } else {
+          // Clean tackle
+          events.push({
+            minute,
+            type: "tackle",
+            team: defendTeam,
+            playerName: defender.name,
+            targetPlayerName: attacker.name,
+            description: `${defender.name} ${pickRandom(TACKLE_PHRASES, rng)} on ${attacker.name}`,
+          });
+          addPerf(defendTeam, defender.name, 2);
+          continue; // Attack stopped
         }
-        continue; // Attack stopped
       }
     }
 
@@ -296,7 +349,7 @@ export function simulateMatch(home: SquadInput, away: SquadInput, seed: number):
           targetPlayerName: keeper.name,
           description: `${shooter.name} ${pickRandom(SHOT_VERBS, rng)}, but ${keeper.name} ${pickRandom(SAVE_PHRASES, rng)}!`,
         });
-        addPerf(attackTeam === "home" ? "away" : "home", keeper.name, 3);
+        addPerf(defendTeam, keeper.name, 3);
       }
     } else {
       // Miss
@@ -310,7 +363,7 @@ export function simulateMatch(home: SquadInput, away: SquadInput, seed: number):
     }
 
     // Injury chance
-    if (rng() < 0.005) {
+    if (rng() < 0.008) {
       injuryCount++;
       const injuredPlayer = pickRandom(
         attackTeam === "home"

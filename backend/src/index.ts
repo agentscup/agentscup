@@ -54,6 +54,8 @@ httpServer.listen(PORT, () => {
   console.log(`Agents Cup Backend running on port ${PORT}`);
   console.log(`Supabase: ${process.env.SUPABASE_URL ? "configured" : "NOT configured"}`);
   console.log(`Solana RPC: ${process.env.SOLANA_RPC_URL || "devnet (default)"}`);
+  console.log(`Treasury wallet: ${process.env.TREASURY_WALLET || "NOT SET"}`);
+  console.log(`Treasury key: ${process.env.TREASURY_PRIVATE_KEY ? "configured" : "NOT SET"}`);
 });
 
 export { io };

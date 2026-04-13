@@ -221,10 +221,15 @@ export async function sendPayout(
     const recipient = new PublicKey(recipientWallet);
     const lamports = solToLamports(amountSol);
 
-    // Safety check: verify treasury has enough balance
+    // Check treasury balance — reserve 10k lamports for tx fee
     const balance = await connection.getBalance(treasury.publicKey);
-    if (balance < lamports + 10_000) {
-      const err = `Insufficient treasury balance: has ${balance}, need ${lamports + 10_000}`;
+    const txFeeReserve = 10_000; // ~0.00001 SOL covers Solana tx fee
+    const sendLamports = Math.min(lamports, balance - txFeeReserve);
+
+    console.log(`[PAYOUT] Treasury balance: ${balance} lamports, requested: ${lamports}, sending: ${sendLamports}`);
+
+    if (sendLamports <= 0 || sendLamports < lamports * 0.95) {
+      const err = `Insufficient treasury balance: has ${balance}, need ~${lamports + txFeeReserve}`;
       console.error(`[PAYOUT] ${err}`);
       return { success: false, error: err };
     }
@@ -233,7 +238,7 @@ export async function sendPayout(
       SystemProgram.transfer({
         fromPubkey: treasury.publicKey,
         toPubkey: recipient,
-        lamports,
+        lamports: sendLamports,
       })
     );
 
@@ -244,8 +249,9 @@ export async function sendPayout(
       { commitment: "confirmed" }
     );
 
+    const actualSol = sendLamports / LAMPORTS_PER_SOL;
     console.log(
-      `[PAYOUT] Sent ${amountSol} SOL to ${recipientWallet.slice(0, 8)} tx=${signature.slice(0, 12)}`
+      `[PAYOUT] Sent ${actualSol} SOL to ${recipientWallet.slice(0, 8)} tx=${signature.slice(0, 12)}`
     );
     return { success: true, signature };
   } catch (err: unknown) {
