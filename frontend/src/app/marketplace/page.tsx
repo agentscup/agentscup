@@ -7,7 +7,7 @@ import { Agent, Rarity } from "@/types";
 import { getRarityColor } from "@/lib/utils";
 import AgentCard from "@/components/cards/AgentCard";
 import AgentCardDetail from "@/components/cards/AgentCardDetail";
-import { getListings, getUser, listAgent, cancelListing, buyAgent } from "@/lib/api";
+import { getListings, getUser, listAgent, cancelListing, buyAgent, getMarketplaceStats, getTradeHistory, type TradeHistoryRow } from "@/lib/api";
 import { mapUserAgentsFull, MappedUserAgent, DbUserAgent } from "@/lib/mapAgent";
 import { createBuyAgentTx, connection } from "@/lib/solana";
 
@@ -37,7 +37,7 @@ const SORT_OPTIONS = [
   { value: "recent", label: "Recent" },
 ];
 
-type Tab = "browse" | "sell";
+type Tab = "browse" | "sell" | "history";
 
 export default function MarketplacePage() {
   const { publicKey, sendTransaction } = useWallet();
@@ -56,6 +56,13 @@ export default function MarketplacePage() {
   const [buyingId, setBuyingId] = useState<string | null>(null);
   const [buyError, setBuyError] = useState<string | null>(null);
   const pendingBuy = useRef<PendingBuy | null>(null);
+
+  // Stats
+  const [stats, setStats] = useState({ activeListings: 0, totalTrades: 0, totalVolume: 0, floorPrice: 0 });
+
+  // History
+  const [history, setHistory] = useState<TradeHistoryRow[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   // Sell state
   const [myAgents, setMyAgents] = useState<MappedUserAgent[]>([]);
@@ -76,6 +83,26 @@ export default function MarketplacePage() {
   }, []);
 
   useEffect(() => { fetchListings(); }, [fetchListings]);
+
+  // Fetch stats
+  useEffect(() => {
+    getMarketplaceStats()
+      .then(setStats)
+      .catch(() => {});
+  }, [listings]);
+
+  // Fetch history when history tab is selected
+  const fetchHistory = useCallback(() => {
+    setHistoryLoading(true);
+    getTradeHistory(30)
+      .then(setHistory)
+      .catch(() => setHistory([]))
+      .finally(() => setHistoryLoading(false));
+  }, []);
+
+  useEffect(() => {
+    if (tab === "history") fetchHistory();
+  }, [tab, fetchHistory]);
 
   // Fetch user agents for sell tab
   const fetchMyAgents = useCallback(() => {
@@ -248,19 +275,19 @@ export default function MarketplacePage() {
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
         <div>
           <h1 className="font-pixel text-sm sm:text-base text-white tracking-wider" style={{ textShadow: "3px 3px 0 #0B6623" }}>
             MARKETPLACE
           </h1>
           <p className="font-pixel text-[7px] text-white/40 mt-2 tracking-wider">
-            {tab === "browse" ? `${filtered.length} LISTINGS` : "SELL YOUR AGENTS"}
+            {tab === "browse" ? `${filtered.length} LISTINGS` : tab === "history" ? "RECENT TRADES" : "SELL YOUR AGENTS"}
           </p>
         </div>
 
         {/* Tabs */}
         <div className="flex gap-2">
-          {(["browse", "sell"] as Tab[]).map(t => (
+          {(["browse", "sell", "history"] as Tab[]).map(t => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -274,9 +301,31 @@ export default function MarketplacePage() {
                   : "inset -2px -2px 0 #222, inset 2px 2px 0 #444",
               }}
             >
-              {t === "browse" ? "BROWSE" : "SELL"}
+              {t === "browse" ? "BROWSE" : t === "sell" ? "SELL" : "HISTORY"}
             </button>
           ))}
+        </div>
+      </div>
+
+      {/* Stats bar */}
+      <div className="pixel-card p-3 mb-6">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="text-center">
+            <div className="font-pixel text-[6px] text-white/40 tracking-wider mb-1">ACTIVE LISTINGS</div>
+            <div className="font-pixel text-[10px] text-white">{stats.activeListings}</div>
+          </div>
+          <div className="text-center">
+            <div className="font-pixel text-[6px] text-white/40 tracking-wider mb-1">TOTAL TRADES</div>
+            <div className="font-pixel text-[10px] text-[#1E8F4E]">{stats.totalTrades}</div>
+          </div>
+          <div className="text-center">
+            <div className="font-pixel text-[6px] text-white/40 tracking-wider mb-1">VOLUME</div>
+            <div className="font-pixel text-[10px] text-[#FFD700]">{stats.totalVolume} SOL</div>
+          </div>
+          <div className="text-center">
+            <div className="font-pixel text-[6px] text-white/40 tracking-wider mb-1">FLOOR PRICE</div>
+            <div className="font-pixel text-[10px] text-[#00E5FF]">{stats.floorPrice > 0 ? `${stats.floorPrice} SOL` : "—"}</div>
+          </div>
         </div>
       </div>
 
@@ -511,6 +560,76 @@ export default function MarketplacePage() {
                 </div>
               )}
             </>
+          )}
+        </>
+      )}
+
+      {/* ═══════════ HISTORY TAB ═══════════ */}
+      {tab === "history" && (
+        <>
+          {historyLoading ? (
+            <div className="text-center py-20">
+              <div className="font-pixel text-lg text-white/30 mb-4 animate-pulse">...</div>
+              <p className="font-pixel text-[7px] text-white/40 tracking-wider">LOADING TRADE HISTORY</p>
+            </div>
+          ) : history.length === 0 ? (
+            <div className="text-center py-20">
+              <div className="font-pixel text-2xl text-white/30 mb-4">?</div>
+              <h3 className="font-pixel text-[10px] text-white mb-2 tracking-wider">NO TRADES YET</h3>
+              <p className="font-pixel text-[7px] text-white/40 tracking-wider">
+                COMPLETED TRADES WILL APPEAR HERE
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {/* Header */}
+              <div className="hidden sm:grid grid-cols-[1fr_80px_80px_100px_80px] gap-3 px-4 py-2">
+                <span className="font-pixel text-[6px] text-white/30 tracking-wider">AGENT</span>
+                <span className="font-pixel text-[6px] text-white/30 tracking-wider text-center">RARITY</span>
+                <span className="font-pixel text-[6px] text-white/30 tracking-wider text-center">POSITION</span>
+                <span className="font-pixel text-[6px] text-white/30 tracking-wider text-center">PRICE</span>
+                <span className="font-pixel text-[6px] text-white/30 tracking-wider text-center">DATE</span>
+              </div>
+
+              {history.map((trade) => {
+                const agent = trade.user_agents?.agents;
+                if (!agent) return null;
+                const date = new Date(trade.created_at);
+                const dateStr = `${date.getMonth() + 1}/${date.getDate()}`;
+                const timeStr = `${date.getHours().toString().padStart(2, "0")}:${date.getMinutes().toString().padStart(2, "0")}`;
+                return (
+                  <div
+                    key={trade.id}
+                    className="pixel-card p-3 sm:grid sm:grid-cols-[1fr_80px_80px_100px_80px] sm:items-center gap-3"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div
+                        className="w-2 h-2 shrink-0"
+                        style={{ backgroundColor: getRarityColor(agent.rarity as Rarity) }}
+                      />
+                      <span className="font-pixel text-[8px] text-white tracking-wider">{agent.name}</span>
+                    </div>
+                    <div className="text-center">
+                      <span
+                        className="font-pixel text-[7px] tracking-wider"
+                        style={{ color: getRarityColor(agent.rarity as Rarity) }}
+                      >
+                        {agent.rarity.toUpperCase()}
+                      </span>
+                    </div>
+                    <div className="text-center">
+                      <span className="font-pixel text-[7px] text-white/60 tracking-wider">{agent.position}</span>
+                    </div>
+                    <div className="text-center">
+                      <span className="font-pixel text-[8px] text-[#FFD700] tracking-wider">{trade.price_sol} SOL</span>
+                    </div>
+                    <div className="text-center">
+                      <span className="font-pixel text-[6px] text-white/40 tracking-wider">{dateStr} {timeStr}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           )}
         </>
       )}

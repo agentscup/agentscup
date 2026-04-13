@@ -142,6 +142,36 @@ export async function getListings() {
   return request("/marketplace/listings");
 }
 
+export async function getMarketplaceStats(): Promise<{
+  activeListings: number;
+  totalTrades: number;
+  totalVolume: number;
+  floorPrice: number;
+}> {
+  return request("/marketplace/stats");
+}
+
+export interface TradeHistoryRow {
+  id: string;
+  seller_wallet: string;
+  price_sol: number;
+  tx_signature: string;
+  created_at: string;
+  user_agents?: {
+    agents?: {
+      name: string;
+      rarity: string;
+      position: string;
+      overall: number;
+      image_url?: string;
+    };
+  };
+}
+
+export async function getTradeHistory(limit = 20): Promise<TradeHistoryRow[]> {
+  return request(`/marketplace/history?limit=${limit}`);
+}
+
 export async function listAgent(data: {
   walletAddress: string;
   userAgentId: string;

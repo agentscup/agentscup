@@ -134,6 +134,68 @@ router.post(
   }
 );
 
+// GET /api/marketplace/stats — volume, total trades, floor price
+router.get("/stats", async (_req: Request, res: Response) => {
+  try {
+    // Active listings count + floor price
+    const { data: active, error: aErr } = await supabase
+      .from("listings")
+      .select("price_sol")
+      .eq("is_active", true)
+      .gt("expires_at", new Date().toISOString());
+    if (aErr) throw aErr;
+
+    const activeCount = active?.length || 0;
+    const floorPrice = activeCount > 0
+      ? Math.min(...active!.map((l) => Number(l.price_sol)))
+      : 0;
+
+    // Completed sales (is_active=false + has tx_signature = was bought)
+    const { data: sold, error: sErr } = await supabase
+      .from("listings")
+      .select("price_sol")
+      .eq("is_active", false)
+      .not("tx_signature", "is", null);
+    if (sErr) throw sErr;
+
+    const totalTrades = sold?.length || 0;
+    const totalVolume = sold
+      ? sold.reduce((sum, l) => sum + Number(l.price_sol), 0)
+      : 0;
+
+    res.json({
+      activeListings: activeCount,
+      totalTrades,
+      totalVolume: Math.round(totalVolume * 1000) / 1000,
+      floorPrice: Math.round(floorPrice * 1000) / 1000,
+    });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    res.status(500).json({ error: msg });
+  }
+});
+
+// GET /api/marketplace/history — recent completed trades
+router.get("/history", async (req: Request, res: Response) => {
+  try {
+    const limit = Math.min(Number(req.query.limit) || 20, 50);
+
+    const { data, error } = await supabase
+      .from("listings")
+      .select("id, seller_wallet, price_sol, tx_signature, created_at, user_agents(*, agents(*))")
+      .eq("is_active", false)
+      .not("tx_signature", "is", null)
+      .order("created_at", { ascending: false })
+      .limit(limit);
+
+    if (error) throw error;
+    res.json(data || []);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    res.status(500).json({ error: msg });
+  }
+});
+
 // DELETE /api/marketplace/cancel/:id
 router.delete("/cancel/:id", async (req: Request, res: Response) => {
   try {
