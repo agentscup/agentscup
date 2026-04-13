@@ -3,6 +3,32 @@ import { supabase } from "../lib/supabase";
 
 const router = Router();
 
+/* ── Random team name generator ─────────────────────────────────── */
+const ADJECTIVES = [
+  "Atomic", "Blazing", "Cosmic", "Dark", "Electric", "Frozen",
+  "Golden", "Hyper", "Iron", "Jade", "Killer", "Lunar",
+  "Mega", "Neon", "Omega", "Pixel", "Quantum", "Rogue",
+  "Shadow", "Turbo", "Ultra", "Venom", "Wild", "Zero",
+  "Binary", "Cyber", "Digital", "Flux", "Glitch", "Hex",
+  "Inferno", "Nitro", "Onyx", "Plasma", "Rapid", "Stealth",
+];
+
+const NOUNS = [
+  "Wolves", "Dragons", "Titans", "Hawks", "Vipers", "Panthers",
+  "Knights", "Legends", "Strikers", "Phantoms", "Foxes", "Bears",
+  "Lions", "Sharks", "Eagles", "Cobras", "Falcons", "Spartans",
+  "Ninjas", "Rockets", "Bots", "Agents", "Nodes", "Stacks",
+  "Bytes", "Cores", "Chips", "Daemons", "Vectors", "Wardens",
+  "Sentinels", "Reapers", "Rovers", "Bolts", "Hammers", "Blades",
+];
+
+function generateTeamName(): string {
+  const adj = ADJECTIVES[Math.floor(Math.random() * ADJECTIVES.length)];
+  const noun = NOUNS[Math.floor(Math.random() * NOUNS.length)];
+  const num = Math.floor(Math.random() * 100);
+  return `${adj} ${noun} ${num}`;
+}
+
 // POST /api/users/connect — upsert user by wallet
 router.post("/connect", async (req: Request, res: Response) => {
   try {
@@ -20,10 +46,18 @@ router.post("/connect", async (req: Request, res: Response) => {
 
     if (error) throw error;
 
-    // Ensure leaderboard row exists
-    await supabase
+    // Ensure leaderboard row exists — give new users a random team name
+    const { data: existing } = await supabase
       .from("leaderboard")
-      .upsert({ user_id: data.id, team_name: "MY SQUAD" }, { onConflict: "user_id" });
+      .select("id")
+      .eq("user_id", data.id)
+      .single();
+
+    if (!existing) {
+      await supabase
+        .from("leaderboard")
+        .insert({ user_id: data.id, team_name: generateTeamName() });
+    }
 
     res.json(data);
   } catch (err: unknown) {
