@@ -2,13 +2,21 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
+import { PublicKey } from "@solana/web3.js";
 import { Agent, Formation, Position } from "@/types";
 import { FORMATIONS } from "@/components/squad/FormationPositions";
 import { getUser, getSquads } from "@/lib/api";
 import { mapUserAgents, DbUserAgent } from "@/lib/mapAgent";
 import { connectSocket, disconnectSocket } from "@/lib/socket";
+import { sendSolPayment, connection as solConnection, getSolBalance } from "@/lib/solana";
+import dynamic from "next/dynamic";
 import AgentCard from "@/components/cards/AgentCard";
-import LiveMatchPitch from "@/components/match/LiveMatchPitch";
+
+const MATCH_ENTRY_FEE_SOL = 0.05;
+
+const LiveMatchPitch = dynamic(() => import("@/components/match/LiveMatchPitch"), {
+  ssr: false,
+});
 import type { Socket } from "socket.io-client";
 
 /* ================================================================== */
@@ -74,6 +82,9 @@ interface MatchFinishData {
   pointsEarned: number;
   eloChange: number;
   xpGain: number;
+  prizeSol?: number;
+  payoutTx?: string;
+  entryFeeSol?: number;
 }
 
 /* ================================================================== */
@@ -81,12 +92,13 @@ interface MatchFinishData {
 /* ================================================================== */
 
 export default function MatchPage() {
-  const { publicKey } = useWallet();
+  const { publicKey, signTransaction } = useWallet();
   const socketRef = useRef<Socket | null>(null);
 
   // Page state
   type PageState = "squad-select" | "queue" | "pre-match" | "playing" | "finished";
   const [pageState, setPageState] = useState<PageState>("squad-select");
+  const [isPaying, setIsPaying] = useState(false);
 
   // Squad building state
   const [ownedAgents, setOwnedAgents] = useState<Agent[]>([]);
@@ -320,9 +332,9 @@ export default function MatchPage() {
     setSelectedSlot(null);
   }, [slots, playableAgents]);
 
-  // Find match
-  const findMatch = useCallback(() => {
-    if (!publicKey || !socketRef.current) return;
+  // Find match — pay entry fee then join queue
+  const findMatch = useCallback(async () => {
+    if (!publicKey || !socketRef.current || !signTransaction) return;
 
     // Build positions map: slot → agentId
     const posMap: Record<string, string> = {};
@@ -336,13 +348,44 @@ export default function MatchPage() {
     }
 
     setError(null);
-    socketRef.current.emit("join_queue", {
-      wallet: publicKey.toBase58(),
-      formation,
-      positions: posMap,
-      managerId: manager?.id,
-    });
-  }, [publicKey, positions, formation, manager]);
+    setIsPaying(true);
+
+    try {
+      // Check balance first
+      const balance = await getSolBalance(publicKey.toBase58());
+      if (balance < MATCH_ENTRY_FEE_SOL + 0.001) {
+        setError(`Insufficient balance. Need ${MATCH_ENTRY_FEE_SOL} SOL + fees. You have ${balance.toFixed(4)} SOL.`);
+        setIsPaying(false);
+        return;
+      }
+
+      // Send entry fee to treasury
+      const txSignature = await sendSolPayment(
+        solConnection,
+        publicKey,
+        signTransaction,
+        MATCH_ENTRY_FEE_SOL
+      );
+
+      // Join queue with verified TX
+      socketRef.current.emit("join_queue", {
+        wallet: publicKey.toBase58(),
+        formation,
+        positions: posMap,
+        managerId: manager?.id,
+        txSignature,
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Payment failed";
+      if (msg.includes("User rejected")) {
+        setError("Payment cancelled");
+      } else {
+        setError(`Payment error: ${msg}`);
+      }
+    } finally {
+      setIsPaying(false);
+    }
+  }, [publicKey, signTransaction, positions, formation, manager]);
 
   const cancelQueue = useCallback(() => {
     socketRef.current?.emit("leave_queue");
@@ -525,13 +568,24 @@ export default function MatchPage() {
                   <span className="font-pixel text-[7px] text-white/40 tracking-wider">
                     {assignedCount}/11 PLAYERS
                   </span>
-                  <button
-                    onClick={findMatch}
-                    disabled={assignedCount < 11}
-                    className="pixel-btn text-[10px] px-8 py-3 disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    {assignedCount < 11 ? `NEED ${11 - assignedCount} MORE` : "FIND MATCH"}
-                  </button>
+                  <div className="flex flex-col items-end gap-1">
+                    <button
+                      onClick={findMatch}
+                      disabled={assignedCount < 11 || isPaying}
+                      className="pixel-btn text-[10px] px-8 py-3 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      {isPaying
+                        ? "PAYING..."
+                        : assignedCount < 11
+                          ? `NEED ${11 - assignedCount} MORE`
+                          : "FIND MATCH"}
+                    </button>
+                    {assignedCount >= 11 && (
+                      <span className="font-pixel text-[6px] text-[#FFD700]/60 tracking-wider">
+                        ENTRY FEE: {MATCH_ENTRY_FEE_SOL} SOL
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -721,6 +775,9 @@ export default function MatchPage() {
               </div>
             </div>
 
+            <div className="font-pixel text-[7px] text-[#FFD700] mb-3 tracking-wider" style={{ textShadow: "0 0 8px #FFD70030" }}>
+              PRIZE POT: {MATCH_ENTRY_FEE_SOL * 2} SOL
+            </div>
             <div className="font-pixel text-[8px] text-white/30 tracking-[0.2em] animate-pulse">
               KICK OFF IN 3...
             </div>
@@ -858,6 +915,22 @@ export default function MatchPage() {
                 >
                   {resultText}
                 </div>
+
+                {/* Prize display */}
+                {matchResult.prizeSol !== undefined && matchResult.prizeSol > 0 && (
+                  <div className="mb-3 py-2 px-3" style={{ background: "rgba(255,215,0,0.08)", border: "2px solid #FFD70050" }}>
+                    <div className="font-pixel text-[6px] text-[#FFD700]/60 tracking-wider mb-1">PRIZE WON</div>
+                    <div className="font-pixel text-base text-[#FFD700]" style={{ textShadow: "0 0 10px #FFD70040, 2px 2px 0 rgba(0,0,0,0.8)" }}>
+                      +{matchResult.prizeSol} SOL
+                    </div>
+                  </div>
+                )}
+                {matchResult.prizeSol === 0 && resultText === "DRAW" && (
+                  <div className="mb-3 py-2 px-3" style={{ background: "rgba(234,179,8,0.08)", border: "2px solid #eab30850" }}>
+                    <div className="font-pixel text-[6px] text-[#eab308]/60 tracking-wider">ENTRY FEE REFUNDED</div>
+                  </div>
+                )}
+
                 <div className="flex sm:flex-col items-center justify-center gap-3 sm:gap-2">
                   <div className="flex items-center gap-1.5">
                     <span className="font-pixel text-[5px] sm:text-[6px] text-white/40 tracking-wider">PTS</span>

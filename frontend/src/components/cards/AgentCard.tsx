@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import { Agent, Rarity } from "@/types";
 import { cn, getRarityColor } from "@/lib/utils";
 
@@ -65,7 +66,7 @@ function getBorderColor(rarity: Rarity) {
   }
 }
 
-export default function AgentCard({
+export default memo(function AgentCard({
   agent,
   size = "md",
   onClick,
@@ -206,4 +207,5 @@ export default function AgentCard({
       )}
     </div>
   );
-}
+});
+

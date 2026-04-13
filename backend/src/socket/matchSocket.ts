@@ -2,6 +2,7 @@ import { Server, Socket } from "socket.io";
 import { supabase } from "../lib/supabase";
 import { simulateMatch, SquadInput, PlayerInput, MatchEvent, MatchResult } from "../engine/matchEngine";
 import { calculateElo } from "../services/eloService";
+import { verifyEntryFeeTransaction, sendPayout, MATCH_ENTRY_FEE_SOL } from "../lib/solana";
 
 /* ================================================================== */
 /*  Online PvP Matchmaking + Real-time Match Streaming                 */
@@ -14,6 +15,7 @@ interface QueueEntry {
   teamName: string;
   userId: string;
   joinedAt: number;
+  txSignature: string;
 }
 
 interface ActiveMatch {
@@ -41,6 +43,7 @@ const activeMatches = new Map<string, ActiveMatch>();        // matchId → matc
 const walletToSocket = new Map<string, string>();            // wallet → socketId
 const socketToWallet = new Map<string, string>();            // socketId → wallet
 const walletToMatch = new Map<string, string>();             // wallet → matchId
+const usedTxSignatures = new Set<string>();                  // prevent TX reuse
 
 export function setupMatchSocket(io: Server) {
   io.on("connection", (socket: Socket) => {
@@ -52,11 +55,18 @@ export function setupMatchSocket(io: Server) {
       formation: string;
       positions: Record<string, string>; // slot → agentId
       managerId?: string;
+      txSignature: string;
     }) => {
       try {
-        const { wallet, formation, positions, managerId } = data;
+        const { wallet, formation, positions, managerId, txSignature } = data;
         if (!wallet || !formation || !positions) {
           socket.emit("queue_error", { message: "Missing wallet, formation, or positions" });
+          return;
+        }
+
+        // Entry fee TX required
+        if (!txSignature) {
+          socket.emit("queue_error", { message: "Entry fee payment required" });
           return;
         }
 
@@ -69,6 +79,24 @@ export function setupMatchSocket(io: Server) {
           socket.emit("queue_error", { message: "Already in a match" });
           return;
         }
+
+        // Prevent TX reuse
+        if (usedTxSignatures.has(txSignature)) {
+          socket.emit("queue_error", { message: "Transaction already used" });
+          return;
+        }
+
+        // Verify entry fee on-chain
+        console.log(`[MATCH] Verifying entry fee for ${wallet.slice(0, 8)} tx=${txSignature.slice(0, 12)}`);
+        const verification = await verifyEntryFeeTransaction(txSignature, wallet);
+        if (!verification.valid) {
+          console.log(`[MATCH] Entry fee verification failed: ${verification.error}`);
+          socket.emit("queue_error", { message: `Payment verification failed: ${verification.error}` });
+          return;
+        }
+
+        // Mark TX as used (permanently — even after refund)
+        usedTxSignatures.add(txSignature);
 
         // Track socket ↔ wallet mapping
         walletToSocket.set(wallet, socket.id);
@@ -83,6 +111,8 @@ export function setupMatchSocket(io: Server) {
 
         if (!user) {
           socket.emit("queue_error", { message: "User not found. Connect your wallet first." });
+          // Refund since we already marked TX as used
+          sendPayout(wallet, MATCH_ENTRY_FEE_SOL).catch(e => console.error("[MATCH] Refund failed:", e));
           return;
         }
 
@@ -90,6 +120,7 @@ export function setupMatchSocket(io: Server) {
         const squad = await buildVerifiedSquad(wallet, user.id, formation, positions, managerId);
         if (!squad) {
           socket.emit("queue_error", { message: "Invalid squad. Make sure you own all agents." });
+          sendPayout(wallet, MATCH_ENTRY_FEE_SOL).catch(e => console.error("[MATCH] Refund failed:", e));
           return;
         }
 
@@ -107,11 +138,12 @@ export function setupMatchSocket(io: Server) {
           teamName: lb?.team_name || user.username || wallet.slice(0, 8),
           userId: user.id,
           joinedAt: Date.now(),
+          txSignature,
         };
 
         matchmakingQueue.set(wallet, entry);
         socket.emit("queue_joined", { position: matchmakingQueue.size });
-        console.log(`[MATCH] ${wallet.slice(0, 8)} joined queue (${matchmakingQueue.size} in queue)`);
+        console.log(`[MATCH] ${wallet.slice(0, 8)} joined queue (${matchmakingQueue.size} in queue) [PAID ${MATCH_ENTRY_FEE_SOL} SOL]`);
 
         // Try to find a match
         tryMatchPlayers(io);
@@ -122,30 +154,42 @@ export function setupMatchSocket(io: Server) {
     });
 
     // ─── Leave Queue ─────────────────────────────────────────
-    socket.on("leave_queue", () => {
+    socket.on("leave_queue", async () => {
       const wallet = socketToWallet.get(socket.id);
       if (wallet && matchmakingQueue.has(wallet)) {
         matchmakingQueue.delete(wallet);
+
+        // Refund entry fee
+        console.log(`[MATCH] ${wallet.slice(0, 8)} left queue — refunding ${MATCH_ENTRY_FEE_SOL} SOL`);
+        const refund = await sendPayout(wallet, MATCH_ENTRY_FEE_SOL);
+        if (!refund.success) {
+          console.error(`[MATCH] REFUND FAILED for ${wallet}: ${refund.error}`);
+        }
+
         socket.emit("queue_left", {});
-        console.log(`[MATCH] ${wallet.slice(0, 8)} left queue`);
       }
     });
 
     // ─── Disconnect ──────────────────────────────────────────
-    socket.on("disconnect", () => {
+    socket.on("disconnect", async () => {
       const wallet = socketToWallet.get(socket.id);
       if (wallet) {
-        // Remove from queue
-        matchmakingQueue.delete(wallet);
+        // Refund if was in queue (not yet matched)
+        if (matchmakingQueue.has(wallet)) {
+          matchmakingQueue.delete(wallet);
+          console.log(`[MATCH] ${wallet.slice(0, 8)} disconnected from queue — refunding`);
+          const refund = await sendPayout(wallet, MATCH_ENTRY_FEE_SOL);
+          if (!refund.success) {
+            console.error(`[MATCH] DISCONNECT REFUND FAILED for ${wallet}: ${refund.error}`);
+          }
+        }
 
-        // If in active match, handle forfeit
+        // If in active match, let it play out (no refund — match continues)
         const matchId = walletToMatch.get(wallet);
         if (matchId) {
           const match = activeMatches.get(matchId);
           if (match && match.interval) {
-            // Don't end the match — let it play out. The disconnected player just won't see events.
-            // They can reconnect later to see the result.
-            console.log(`[MATCH] ${wallet.slice(0, 8)} disconnected during match ${matchId}`);
+            console.log(`[MATCH] ${wallet.slice(0, 8)} disconnected during match ${matchId} — match continues`);
           }
         }
 
@@ -401,26 +445,62 @@ async function finishMatch(io: Server, match: ActiveMatch) {
       await supabase.from("users").update({ xp: (awayUser.xp || 0) + awayXp }).eq("id", match.awayUserId);
     }
 
+    // ─── Prize Payout ──────────────────────────────────────
+    const isDraw = result.homeScore === result.awayScore;
+    const homeWon = result.homeScore > result.awayScore;
+    const prizePot = MATCH_ENTRY_FEE_SOL * 2;
+    let payoutTx: string | undefined;
+
+    if (isDraw) {
+      console.log(`[MATCH] Draw — refunding both players ${MATCH_ENTRY_FEE_SOL} SOL each`);
+      const [homeRefund, awayRefund] = await Promise.allSettled([
+        sendPayout(match.homeWallet, MATCH_ENTRY_FEE_SOL),
+        sendPayout(match.awayWallet, MATCH_ENTRY_FEE_SOL),
+      ]);
+      if (homeRefund.status === "fulfilled" && !homeRefund.value.success) {
+        console.error(`[MATCH] HOME REFUND FAILED: ${homeRefund.value.error}`);
+      }
+      if (awayRefund.status === "fulfilled" && !awayRefund.value.success) {
+        console.error(`[MATCH] AWAY REFUND FAILED: ${awayRefund.value.error}`);
+      }
+    } else {
+      const winnerWallet = homeWon ? match.homeWallet : match.awayWallet;
+      console.log(`[MATCH] Paying winner ${winnerWallet.slice(0, 8)} → ${prizePot} SOL`);
+      const payout = await sendPayout(winnerWallet, prizePot);
+      if (payout.success) {
+        payoutTx = payout.signature;
+        console.log(`[MATCH] Payout confirmed: tx=${payoutTx?.slice(0, 12)}`);
+      } else {
+        console.error(`[MATCH] PAYOUT FAILED for ${winnerWallet}: ${payout.error}`);
+      }
+    }
+
     // Notify both players
     const homePointsEarned = result.homeScore > result.awayScore ? 3 : result.homeScore === result.awayScore ? 1 : 0;
     const awayPointsEarned = result.awayScore > result.homeScore ? 3 : result.homeScore === result.awayScore ? 1 : 0;
 
-    const finishPayload = (side: "home" | "away") => ({
-      matchId: match.matchId,
-      result: {
-        homeScore: result.homeScore,
-        awayScore: result.awayScore,
-        possession: result.possession,
-        shots: result.shots,
-        shotsOnTarget: result.shotsOnTarget,
-        manOfTheMatch: result.manOfTheMatch,
-      },
-      pointsEarned: side === "home" ? homePointsEarned : awayPointsEarned,
-      eloChange: side === "home" ? homeEloChange : awayEloChange,
-      xpGain: side === "home"
-        ? (result.homeScore > result.awayScore ? 30 : result.homeScore === result.awayScore ? 15 : 5)
-        : (result.awayScore > result.homeScore ? 30 : result.homeScore === result.awayScore ? 15 : 5),
-    });
+    const finishPayload = (side: "home" | "away") => {
+      const iWon = (side === "home" && homeWon) || (side === "away" && !homeWon && !isDraw);
+      return {
+        matchId: match.matchId,
+        result: {
+          homeScore: result.homeScore,
+          awayScore: result.awayScore,
+          possession: result.possession,
+          shots: result.shots,
+          shotsOnTarget: result.shotsOnTarget,
+          manOfTheMatch: result.manOfTheMatch,
+        },
+        pointsEarned: side === "home" ? homePointsEarned : awayPointsEarned,
+        eloChange: side === "home" ? homeEloChange : awayEloChange,
+        xpGain: side === "home"
+          ? (result.homeScore > result.awayScore ? 30 : result.homeScore === result.awayScore ? 15 : 5)
+          : (result.awayScore > result.homeScore ? 30 : result.homeScore === result.awayScore ? 15 : 5),
+        prizeSol: isDraw ? 0 : (iWon ? prizePot : 0),
+        payoutTx: iWon ? payoutTx : undefined,
+        entryFeeSol: MATCH_ENTRY_FEE_SOL,
+      };
+    };
 
     const homeSocket = io.sockets.sockets.get(match.homeSocketId);
     const awaySocket = io.sockets.sockets.get(match.awaySocketId);

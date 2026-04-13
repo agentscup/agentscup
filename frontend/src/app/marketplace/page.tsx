@@ -5,8 +5,12 @@ import { useWallet } from "@solana/wallet-adapter-react";
 import { PublicKey } from "@solana/web3.js";
 import { Agent, Rarity } from "@/types";
 import { getRarityColor } from "@/lib/utils";
+import dynamic from "next/dynamic";
 import AgentCard from "@/components/cards/AgentCard";
-import AgentCardDetail from "@/components/cards/AgentCardDetail";
+
+const AgentCardDetail = dynamic(() => import("@/components/cards/AgentCardDetail"), {
+  ssr: false,
+});
 import { getListings, getUser, listAgent, cancelListing, buyAgent, getMarketplaceStats, getTradeHistory, type TradeHistoryRow } from "@/lib/api";
 import { mapUserAgentsFull, MappedUserAgent, DbUserAgent } from "@/lib/mapAgent";
 import { createBuyAgentTx, connection } from "@/lib/solana";

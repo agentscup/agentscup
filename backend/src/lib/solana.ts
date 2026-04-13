@@ -1,8 +1,12 @@
 import {
   Connection,
   PublicKey,
+  Keypair,
+  Transaction,
+  SystemProgram,
   clusterApiUrl,
   LAMPORTS_PER_SOL,
+  sendAndConfirmTransaction,
 } from "@solana/web3.js";
 import dotenv from "dotenv";
 dotenv.config();
@@ -127,4 +131,126 @@ export async function getBalance(walletAddress: string): Promise<number> {
   const pubkey = new PublicKey(walletAddress);
   const lamports = await connection.getBalance(pubkey);
   return lamports / LAMPORTS_PER_SOL;
+}
+
+/* ================================================================== */
+/*  Match Entry Fee System                                             */
+/* ================================================================== */
+
+export const MATCH_ENTRY_FEE_SOL = 0.05;
+
+/** Get treasury keypair for signing outgoing transactions */
+function getTreasuryKeypair(): Keypair {
+  const raw = process.env.TREASURY_PRIVATE_KEY;
+  if (!raw) throw new Error("TREASURY_PRIVATE_KEY not configured");
+  const secretKey = Uint8Array.from(JSON.parse(raw));
+  return Keypair.fromSecretKey(secretKey);
+}
+
+/**
+ * Verify an entry fee transaction:
+ * - TX exists and succeeded on-chain
+ * - Payer matches the claimed wallet
+ * - Treasury wallet received >= entry fee amount
+ */
+export async function verifyEntryFeeTransaction(
+  txSignature: string,
+  payerWallet: string
+): Promise<{ valid: boolean; error?: string }> {
+  try {
+    const tx = await connection.getTransaction(txSignature, {
+      commitment: "confirmed",
+      maxSupportedTransactionVersion: 0,
+    });
+
+    if (!tx) return { valid: false, error: "Transaction not found" };
+    if (tx.meta?.err) return { valid: false, error: "Transaction failed on-chain" };
+
+    // Verify payer
+    const accountKeys = tx.transaction.message.getAccountKeys();
+    const payerKey = accountKeys.get(0);
+    if (!payerKey || payerKey.toBase58() !== payerWallet) {
+      return { valid: false, error: "Payer mismatch" };
+    }
+
+    // Verify treasury received the entry fee
+    const treasuryAddress = TREASURY_WALLET.toBase58();
+    let treasuryIdx = -1;
+    for (let i = 0; i < accountKeys.length; i++) {
+      if (accountKeys.get(i)?.toBase58() === treasuryAddress) {
+        treasuryIdx = i;
+        break;
+      }
+    }
+
+    if (treasuryIdx === -1) {
+      return { valid: false, error: "Treasury not in transaction" };
+    }
+
+    const expectedLamports = solToLamports(MATCH_ENTRY_FEE_SOL);
+    const treasuryReceived =
+      tx.meta!.postBalances[treasuryIdx] - tx.meta!.preBalances[treasuryIdx];
+
+    if (treasuryReceived < expectedLamports - 1000) {
+      return {
+        valid: false,
+        error: `Treasury received ${treasuryReceived}, expected ${expectedLamports}`,
+      };
+    }
+
+    console.log(
+      `[ENTRY FEE] Verified: payer=${payerWallet.slice(0, 8)} amount=${treasuryReceived} tx=${txSignature.slice(0, 12)}`
+    );
+    return { valid: true };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    return { valid: false, error: message };
+  }
+}
+
+/**
+ * Send SOL from treasury to a recipient wallet.
+ * Used for match winner payouts and queue-cancel refunds.
+ */
+export async function sendPayout(
+  recipientWallet: string,
+  amountSol: number
+): Promise<{ success: boolean; signature?: string; error?: string }> {
+  try {
+    const treasury = getTreasuryKeypair();
+    const recipient = new PublicKey(recipientWallet);
+    const lamports = solToLamports(amountSol);
+
+    // Safety check: verify treasury has enough balance
+    const balance = await connection.getBalance(treasury.publicKey);
+    if (balance < lamports + 10_000) {
+      const err = `Insufficient treasury balance: has ${balance}, need ${lamports + 10_000}`;
+      console.error(`[PAYOUT] ${err}`);
+      return { success: false, error: err };
+    }
+
+    const tx = new Transaction().add(
+      SystemProgram.transfer({
+        fromPubkey: treasury.publicKey,
+        toPubkey: recipient,
+        lamports,
+      })
+    );
+
+    const signature = await sendAndConfirmTransaction(
+      connection,
+      tx,
+      [treasury],
+      { commitment: "confirmed" }
+    );
+
+    console.log(
+      `[PAYOUT] Sent ${amountSol} SOL to ${recipientWallet.slice(0, 8)} tx=${signature.slice(0, 12)}`
+    );
+    return { success: true, signature };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    console.error(`[PAYOUT ERROR] ${recipientWallet.slice(0, 8)}: ${message}`);
+    return { success: false, error: message };
+  }
 }

@@ -2,9 +2,14 @@
 
 import Link from "next/link";
 import Image from "next/image";
+import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
-import MatchPreview from "@/components/home/MatchPreview";
 import { getSiteStats } from "@/lib/api";
+
+const MatchPreview = dynamic(() => import("@/components/home/MatchPreview"), {
+  ssr: false,
+  loading: () => <div className="w-full max-w-2xl mx-auto aspect-[3/2]" />,
+});
 
 const features = [
   {
@@ -101,12 +106,6 @@ export default function Home() {
           <div className="flex flex-wrap justify-center gap-8 sm:gap-16 text-center">
             <div>
               <div className="font-pixel text-xl text-white" style={{ textShadow: "2px 2px 0 #0B6623" }}>
-                {stats ? stats.players : "..."}
-              </div>
-              <div className="font-pixel text-[6px] text-white/40 mt-2 tracking-wider">AGENTS</div>
-            </div>
-            <div>
-              <div className="font-pixel text-xl text-white" style={{ textShadow: "2px 2px 0 #0B6623" }}>
                 {stats ? stats.users : "..."}
               </div>
               <div className="font-pixel text-[6px] text-white/40 mt-2 tracking-wider">USERS</div>
@@ -118,10 +117,10 @@ export default function Home() {
               <div className="font-pixel text-[6px] text-white/40 mt-2 tracking-wider">PACK TIERS</div>
             </div>
             <div>
-              <div className="font-pixel text-xl text-[#00AEEF]" style={{ textShadow: "2px 2px 0 #005a7a" }}>
+              <div className="font-pixel text-xl text-white" style={{ textShadow: "2px 2px 0 #0B6623" }}>
                 {stats ? (stats.liveMatches > 0 ? stats.liveMatches : "LIVE") : "..."}
               </div>
-              <div className="font-pixel text-[6px] text-[#00AEEF]/50 mt-2 tracking-wider">MATCHES</div>
+              <div className="font-pixel text-[6px] text-white/40 mt-2 tracking-wider">MATCHES</div>
             </div>
           </div>
         </div>

@@ -2,8 +2,12 @@
 
 import { useState, useMemo, useEffect } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
+import dynamic from "next/dynamic";
 import AgentCard from "@/components/cards/AgentCard";
-import AgentCardDetail from "@/components/cards/AgentCardDetail";
+
+const AgentCardDetail = dynamic(() => import("@/components/cards/AgentCardDetail"), {
+  ssr: false,
+});
 import { Agent, Position, Rarity } from "@/types";
 import { getUser } from "@/lib/api";
 import { mapUserAgents, DbUserAgent } from "@/lib/mapAgent";
