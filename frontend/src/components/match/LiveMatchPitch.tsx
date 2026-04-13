@@ -547,13 +547,13 @@ export default function LiveMatchPitch({
           </div>
         )}
 
-        {/* "You" indicator arrow */}
+        {/* "You" indicator */}
         <div
-          className="absolute top-1 font-pixel text-[4px] sm:text-[5px] tracking-wider z-5 pointer-events-none"
+          className="absolute top-1 sm:top-1.5 font-pixel text-[5px] sm:text-[6px] tracking-wider z-5 pointer-events-none"
           style={{
             left: mySide === "home" ? "20%" : "80%",
             color: mySide === "home" ? "#1E8F4E" : "#FF3B3B",
-            textShadow: "1px 1px 0 #000",
+            textShadow: "1px 1px 0 #000, 0 0 4px rgba(0,0,0,0.8)",
             transform: "translateX(-50%)",
           }}
         >

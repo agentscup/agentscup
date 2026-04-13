@@ -666,31 +666,31 @@ export default function MatchPage() {
               MATCH FOUND
             </div>
 
-            <div className="flex items-center justify-center gap-6 sm:gap-10 max-w-lg mx-auto mb-8">
+            <div className="flex items-center justify-center gap-3 sm:gap-10 max-w-lg mx-auto mb-8 px-2">
               {/* Home */}
-              <div className="flex-1 animate-[slide-up_0.4s_ease-out]">
+              <div className="flex-1 min-w-0 animate-[slide-up_0.4s_ease-out]">
                 <div
-                  className="pixel-card p-4 sm:p-6 text-center"
+                  className="pixel-card p-3 sm:p-6 text-center"
                   style={{ borderColor: "#1E8F4E" }}
                 >
-                  <div className="font-pixel text-[6px] text-[#1E8F4E] mb-2 tracking-wider">
+                  <div className="font-pixel text-[5px] sm:text-[6px] text-[#1E8F4E] mb-1 sm:mb-2 tracking-wider">
                     {mySide === "home" ? "YOU" : "OPPONENT"}
                   </div>
-                  <div className="font-pixel text-[8px] sm:text-[10px] text-white tracking-wider">
+                  <div className="font-pixel text-[7px] sm:text-[10px] text-white tracking-wider truncate">
                     {mySide === "home" ? (myTeamName || "YOUR SQUAD") : opponentName}
                   </div>
-                  <div className="mt-3 flex justify-center gap-1">
+                  <div className="mt-2 sm:mt-3 flex justify-center gap-0.5 sm:gap-1">
                     {[...Array(5)].map((_, i) => (
-                      <div key={i} className="w-1.5 h-2 bg-[#1E8F4E]" style={{ opacity: 0.4 + i * 0.15 }} />
+                      <div key={i} className="w-1 h-1.5 sm:w-1.5 sm:h-2 bg-[#1E8F4E]" style={{ opacity: 0.4 + i * 0.15 }} />
                     ))}
                   </div>
                 </div>
               </div>
 
               {/* VS */}
-              <div className="text-center">
+              <div className="text-center shrink-0 px-1">
                 <div
-                  className="font-pixel text-lg sm:text-xl text-white"
+                  className="font-pixel text-base sm:text-xl text-white"
                   style={{
                     textShadow: "0 0 20px #1E8F4E, 3px 3px 0 #0B6623",
                     animation: "pulse 1s ease-in-out infinite",
@@ -701,20 +701,20 @@ export default function MatchPage() {
               </div>
 
               {/* Away */}
-              <div className="flex-1 animate-[slide-up_0.4s_ease-out_0.15s_both]">
+              <div className="flex-1 min-w-0 animate-[slide-up_0.4s_ease-out_0.15s_both]">
                 <div
-                  className="pixel-card p-4 sm:p-6 text-center"
+                  className="pixel-card p-3 sm:p-6 text-center"
                   style={{ borderColor: "#FF3B3B" }}
                 >
-                  <div className="font-pixel text-[6px] text-[#FF3B3B] mb-2 tracking-wider">
+                  <div className="font-pixel text-[5px] sm:text-[6px] text-[#FF3B3B] mb-1 sm:mb-2 tracking-wider">
                     {mySide === "away" ? "YOU" : "OPPONENT"}
                   </div>
-                  <div className="font-pixel text-[8px] sm:text-[10px] text-white tracking-wider">
+                  <div className="font-pixel text-[7px] sm:text-[10px] text-white tracking-wider truncate">
                     {mySide === "away" ? (myTeamName || "YOUR SQUAD") : opponentName}
                   </div>
-                  <div className="mt-3 flex justify-center gap-1">
+                  <div className="mt-2 sm:mt-3 flex justify-center gap-0.5 sm:gap-1">
                     {[...Array(5)].map((_, i) => (
-                      <div key={i} className="w-1.5 h-2 bg-[#FF3B3B]" style={{ opacity: 0.4 + i * 0.15 }} />
+                      <div key={i} className="w-1 h-1.5 sm:w-1.5 sm:h-2 bg-[#FF3B3B]" style={{ opacity: 0.4 + i * 0.15 }} />
                     ))}
                   </div>
                 </div>
@@ -851,31 +851,31 @@ export default function MatchPage() {
             {/* Result + Rewards + MOTM row */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               {/* Result + Rewards */}
-              <div className="pixel-card p-4 text-center">
+              <div className="pixel-card p-3 sm:p-4 text-center">
                 <div
-                  className="font-pixel text-sm sm:text-base tracking-[0.2em] mb-3"
+                  className="font-pixel text-sm sm:text-base tracking-[0.2em] mb-2 sm:mb-3"
                   style={{ color: resultColor, textShadow: `0 0 15px ${resultColor}40, 2px 2px 0 rgba(0,0,0,0.8)` }}
                 >
                   {resultText}
                 </div>
-                <div className="space-y-2">
-                  <div className="flex items-center justify-center gap-2">
-                    <span className="font-pixel text-[6px] text-white/40 tracking-wider">PTS</span>
-                    <span className="font-pixel text-[10px] text-white" style={{ textShadow: "1px 1px 0 #0B6623" }}>
+                <div className="flex sm:flex-col items-center justify-center gap-3 sm:gap-2">
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-pixel text-[5px] sm:text-[6px] text-white/40 tracking-wider">PTS</span>
+                    <span className="font-pixel text-[9px] sm:text-[10px] text-white" style={{ textShadow: "1px 1px 0 #0B6623" }}>
                       +{matchResult.pointsEarned}
                     </span>
                   </div>
-                  <div className="flex items-center justify-center gap-2">
-                    <span className="font-pixel text-[6px] text-white/40 tracking-wider">ELO</span>
-                    <span className="font-pixel text-[10px]" style={{
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-pixel text-[5px] sm:text-[6px] text-white/40 tracking-wider">ELO</span>
+                    <span className="font-pixel text-[9px] sm:text-[10px]" style={{
                       color: matchResult.eloChange >= 0 ? "#1E8F4E" : "#ef4444",
                     }}>
                       {matchResult.eloChange >= 0 ? "+" : ""}{matchResult.eloChange}
                     </span>
                   </div>
-                  <div className="flex items-center justify-center gap-2">
-                    <span className="font-pixel text-[6px] text-white/40 tracking-wider">XP</span>
-                    <span className="font-pixel text-[10px] text-[#00E5FF]">+{matchResult.xpGain}</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-pixel text-[5px] sm:text-[6px] text-white/40 tracking-wider">XP</span>
+                    <span className="font-pixel text-[9px] sm:text-[10px] text-[#00E5FF]">+{matchResult.xpGain}</span>
                   </div>
                 </div>
               </div>
