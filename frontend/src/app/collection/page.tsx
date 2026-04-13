@@ -89,7 +89,7 @@ export default function CollectionPage() {
             placeholder="SEARCH AGENTS..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="pixel-input flex-1 min-w-[200px]"
+            className="pixel-input flex-1 min-w-0 sm:min-w-[200px]"
           />
           <select
             value={posFilter}

@@ -68,9 +68,8 @@ export default function MatchPreview() {
 
       {/* Mini pitch */}
       <div
-        className="relative w-full overflow-hidden"
+        className="relative w-full aspect-[3/2] overflow-hidden"
         style={{
-          height: 200,
           background: "linear-gradient(180deg, #0B6623 0%, #0a5a1f 30%, #0B6623 50%, #0a5a1f 70%, #0B6623 100%)",
           border: "3px solid #1E8F4E",
           boxShadow: "inset -3px -3px 0 #084a18, inset 3px 3px 0 #2eb060, 6px 6px 0 rgba(0,0,0,0.5)",

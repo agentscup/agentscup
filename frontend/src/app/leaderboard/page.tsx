@@ -63,7 +63,7 @@ export default function LeaderboardPage() {
         <>
           {/* Table */}
           <div
-            className="overflow-hidden"
+            className="overflow-x-auto"
             style={{
               border: "3px solid #1E8F4E",
               boxShadow:
@@ -72,22 +72,23 @@ export default function LeaderboardPage() {
           >
             {/* Table Header */}
             <div
-              className="grid items-center px-3 py-2"
+              className="grid items-center px-2 sm:px-3 py-2"
               style={{
-                gridTemplateColumns: "32px 1fr 40px 40px 40px 40px 48px 48px 56px",
+                gridTemplateColumns: "24px 1fr 28px 28px 28px 28px 32px 32px 40px",
+                minWidth: "320px",
                 background: "#1E8F4E",
                 borderBottom: "3px solid #0B6623",
               }}
             >
-              <span className="font-pixel text-[6px] text-black tracking-wider">#</span>
-              <span className="font-pixel text-[6px] text-black tracking-wider">TEAM</span>
-              <span className="font-pixel text-[6px] text-black tracking-wider text-center">P</span>
-              <span className="font-pixel text-[6px] text-black tracking-wider text-center">W</span>
-              <span className="font-pixel text-[6px] text-black tracking-wider text-center">D</span>
-              <span className="font-pixel text-[6px] text-black tracking-wider text-center">L</span>
-              <span className="font-pixel text-[6px] text-black tracking-wider text-center">GF</span>
-              <span className="font-pixel text-[6px] text-black tracking-wider text-center">GA</span>
-              <span className="font-pixel text-[6px] text-black tracking-wider text-center">PTS</span>
+              <span className="font-pixel text-[5px] sm:text-[6px] text-black tracking-wider">#</span>
+              <span className="font-pixel text-[5px] sm:text-[6px] text-black tracking-wider">TEAM</span>
+              <span className="font-pixel text-[5px] sm:text-[6px] text-black tracking-wider text-center">P</span>
+              <span className="font-pixel text-[5px] sm:text-[6px] text-black tracking-wider text-center">W</span>
+              <span className="font-pixel text-[5px] sm:text-[6px] text-black tracking-wider text-center">D</span>
+              <span className="font-pixel text-[5px] sm:text-[6px] text-black tracking-wider text-center">L</span>
+              <span className="font-pixel text-[5px] sm:text-[6px] text-black tracking-wider text-center hidden sm:block">GF</span>
+              <span className="font-pixel text-[5px] sm:text-[6px] text-black tracking-wider text-center hidden sm:block">GA</span>
+              <span className="font-pixel text-[5px] sm:text-[6px] text-black tracking-wider text-center">PTS</span>
             </div>
 
             {/* Rows */}
@@ -98,16 +99,17 @@ export default function LeaderboardPage() {
               return (
                 <div
                   key={team.id}
-                  className="grid items-center px-3 py-2.5 transition-colors"
+                  className="grid items-center px-2 sm:px-3 py-2 sm:py-2.5 transition-colors"
                   style={{
-                    gridTemplateColumns: "32px 1fr 40px 40px 40px 40px 48px 48px 56px",
+                    gridTemplateColumns: "24px 1fr 28px 28px 28px 28px 32px 32px 40px",
+                    minWidth: "320px",
                     background: idx % 2 === 0 ? "#111" : "#0a0a0a",
                     borderBottom: "1px solid #222",
                     borderLeft: "3px solid transparent",
                   }}
                 >
                   <span
-                    className="font-pixel text-[7px] tracking-wider"
+                    className="font-pixel text-[6px] sm:text-[7px] tracking-wider"
                     style={{
                       color:
                         rank === 1
@@ -122,19 +124,19 @@ export default function LeaderboardPage() {
                     {rank}
                   </span>
 
-                  <span className="font-pixel text-[7px] tracking-wider truncate text-[#e0d6b8]">
-                    {team.team_name || team.users?.username || team.users?.wallet_address?.slice(0, 8) + "..." || "UNKNOWN"}
+                  <span className="font-pixel text-[6px] sm:text-[7px] tracking-wider truncate text-[#e0d6b8]">
+                    {team.team_name || team.users?.username || team.users?.wallet_address?.slice(0, 6) + "..." || "UNKNOWN"}
                   </span>
 
-                  <span className="font-pixel text-[7px] text-white/60 text-center">{played}</span>
-                  <span className="font-pixel text-[7px] text-[#1E8F4E] text-center">{team.wins}</span>
-                  <span className="font-pixel text-[7px] text-[#eab308] text-center">{team.draws}</span>
-                  <span className="font-pixel text-[7px] text-[#ef4444] text-center">{team.losses}</span>
-                  <span className="font-pixel text-[7px] text-white/50 text-center">{team.goals_for}</span>
-                  <span className="font-pixel text-[7px] text-white/50 text-center">{team.goals_against}</span>
+                  <span className="font-pixel text-[6px] sm:text-[7px] text-white/60 text-center">{played}</span>
+                  <span className="font-pixel text-[6px] sm:text-[7px] text-[#1E8F4E] text-center">{team.wins}</span>
+                  <span className="font-pixel text-[6px] sm:text-[7px] text-[#eab308] text-center">{team.draws}</span>
+                  <span className="font-pixel text-[6px] sm:text-[7px] text-[#ef4444] text-center">{team.losses}</span>
+                  <span className="font-pixel text-[6px] sm:text-[7px] text-white/50 text-center hidden sm:block">{team.goals_for}</span>
+                  <span className="font-pixel text-[6px] sm:text-[7px] text-white/50 text-center hidden sm:block">{team.goals_against}</span>
 
                   <span
-                    className="font-pixel text-[8px] text-center font-bold text-white"
+                    className="font-pixel text-[7px] sm:text-[8px] text-center font-bold text-white"
                   >
                     {team.points}
                   </span>

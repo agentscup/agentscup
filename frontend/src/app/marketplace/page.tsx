@@ -298,7 +298,7 @@ export default function MarketplacePage() {
                 placeholder="SEARCH AGENTS..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="pixel-input flex-1 min-w-[180px]"
+                className="pixel-input flex-1 min-w-0 sm:min-w-[180px]"
               />
               <select value={posFilter} onChange={(e) => setPosFilter(e.target.value)} className="pixel-select">
                 <option value="ALL">ALL POS</option>

@@ -10,7 +10,10 @@ import {
 const cluster = (process.env.NEXT_PUBLIC_SOLANA_CLUSTER || "mainnet-beta") as "devnet" | "mainnet-beta";
 const rpcUrl = process.env.NEXT_PUBLIC_SOLANA_RPC_URL || clusterApiUrl(cluster);
 
-export const connection = new Connection(rpcUrl, "confirmed");
+export const connection = new Connection(rpcUrl, {
+  commitment: "confirmed",
+  confirmTransactionInitialTimeout: 60000,
+});
 
 export const TREASURY_WALLET = new PublicKey(
   process.env.NEXT_PUBLIC_TREASURY_WALLET || "11111111111111111111111111111111"

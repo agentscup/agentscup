@@ -346,7 +346,7 @@ export default function SquadPage() {
         </div>
 
         {/* Side panel: Agent picker */}
-        <div className="pixel-card p-4 max-h-[700px] overflow-y-auto">
+        <div className="pixel-card p-4 max-h-[350px] sm:max-h-[500px] lg:max-h-[700px] overflow-y-auto">
           {showManagerPicker ? (
             <>
               <h3 className="font-pixel text-[8px] text-white mb-3 tracking-wider">SELECT MANAGER</h3>

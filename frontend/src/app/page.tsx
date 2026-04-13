@@ -101,15 +101,15 @@ export default function Home() {
           <div className="flex flex-wrap justify-center gap-8 sm:gap-16 text-center">
             <div>
               <div className="font-pixel text-xl text-white" style={{ textShadow: "2px 2px 0 #0B6623" }}>
-                {stats ? stats.agents : "..."}
+                {stats ? stats.players : "..."}
               </div>
               <div className="font-pixel text-[6px] text-white/40 mt-2 tracking-wider">AGENTS</div>
             </div>
             <div>
               <div className="font-pixel text-xl text-white" style={{ textShadow: "2px 2px 0 #0B6623" }}>
-                {stats ? stats.players : "..."}
+                {stats ? stats.users : "..."}
               </div>
-              <div className="font-pixel text-[6px] text-white/40 mt-2 tracking-wider">PLAYERS</div>
+              <div className="font-pixel text-[6px] text-white/40 mt-2 tracking-wider">USERS</div>
             </div>
             <div>
               <div className="font-pixel text-xl text-white" style={{ textShadow: "2px 2px 0 #0B6623" }}>

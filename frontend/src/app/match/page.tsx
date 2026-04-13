@@ -535,7 +535,7 @@ export default function MatchPage() {
               </div>
 
               {/* Agent Picker */}
-              <div className="pixel-card p-4 max-h-[500px] overflow-y-auto">
+              <div className="pixel-card p-4 max-h-[300px] sm:max-h-[400px] lg:max-h-[500px] overflow-y-auto">
                 {selectedSlot && selectedSlotData ? (
                   <>
                     <div className="flex items-center justify-between mb-3">
