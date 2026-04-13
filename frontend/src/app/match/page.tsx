@@ -8,6 +8,7 @@ import { getUser, getSquads } from "@/lib/api";
 import { mapUserAgents, DbUserAgent } from "@/lib/mapAgent";
 import { connectSocket, disconnectSocket } from "@/lib/socket";
 import AgentCard from "@/components/cards/AgentCard";
+import LiveMatchPitch from "@/components/match/LiveMatchPitch";
 import type { Socket } from "socket.io-client";
 
 /* ================================================================== */
@@ -670,51 +671,24 @@ export default function MatchPage() {
   }
 
   // ─── Playing / Finished ────────────────────────────────────
+  const homeName = mySide === "home" ? (myTeamName || "YOUR SQUAD") : opponentName;
+  const awayName = mySide === "away" ? (myTeamName || "YOUR SQUAD") : opponentName;
+
   return (
-    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8">
-      {/* Scoreboard */}
-      <div className="pixel-card-gold p-6 mb-6">
-        <div className="flex items-center justify-between">
-          <div className="text-center flex-1">
-            <div className="font-pixel text-[6px] text-white/40 mb-1 tracking-wider">
-              {mySide === "home" ? "YOU" : "OPPONENT"}
-            </div>
-            <div className="font-pixel text-[8px] text-white tracking-wider">
-              {mySide === "home" ? (myTeamName || "YOUR SQUAD") : opponentName}
-            </div>
-          </div>
-          <div className="text-center px-6">
-            <div className="font-pixel text-2xl sm:text-3xl text-white" style={{ textShadow: "3px 3px 0 #0B6623" }}>
-              {homeScore}
-              <span className="text-white/30 mx-2">-</span>
-              {awayScore}
-            </div>
-            <div className="font-pixel text-[7px] text-white/50 mt-1 tracking-wider">
-              {pageState === "playing" ? `${currentMinute}'` : "FT"}
-            </div>
-          </div>
-          <div className="text-center flex-1">
-            <div className="font-pixel text-[6px] text-white/40 mb-1 tracking-wider">
-              {mySide === "away" ? "YOU" : "OPPONENT"}
-            </div>
-            <div className="font-pixel text-[8px] text-white tracking-wider">
-              {mySide === "away" ? (myTeamName || "YOUR SQUAD") : opponentName}
-            </div>
-          </div>
-        </div>
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6">
+      {/* Live pitch */}
+      <LiveMatchPitch
+        events={displayedEvents}
+        homeScore={homeScore}
+        awayScore={awayScore}
+        currentMinute={currentMinute}
+        homeName={homeName}
+        awayName={awayName}
+        isPlaying={pageState === "playing"}
+      />
 
-        {pageState === "playing" && (
-          <div className="mt-4 w-full h-[4px] bg-[#222]" style={{ imageRendering: "pixelated" }}>
-            <div
-              className="h-full bg-[#1E8F4E] transition-all duration-300"
-              style={{ width: `${(currentMinute / 95) * 100}%` }}
-            />
-          </div>
-        )}
-      </div>
-
-      {/* Live feed */}
-      <div className="mb-6 overflow-hidden"
+      {/* Event feed */}
+      <div className="mt-4 mb-6 overflow-hidden"
         style={{
           background: "#0a0a0a",
           border: "3px solid #333",
@@ -727,12 +701,12 @@ export default function MatchPage() {
               boxShadow: pageState === "playing" ? "0 0 6px #00AEEF" : "none",
             }} />
           <span className="font-pixel text-[7px] text-white/50 tracking-wider">
-            {pageState === "playing" ? "LIVE — PVP" : "MATCH ENDED"}
+            {pageState === "playing" ? "LIVE COMMENTARY" : "MATCH ENDED"}
           </span>
         </div>
-        <div ref={feedRef} className="p-4 max-h-96 overflow-y-auto space-y-1.5">
+        <div ref={feedRef} className="p-3 max-h-48 overflow-y-auto space-y-1">
           {displayedEvents.map((event, i) => (
-            <div key={i} className="flex gap-3 animate-[fade-in_0.3s_ease-out]">
+            <div key={i} className="flex gap-2 animate-[fade-in_0.3s_ease-out]">
               <span className="font-pixel text-[6px] text-white/30 w-6 text-right shrink-0">{event.minute}&apos;</span>
               <span className="font-pixel text-[6px] shrink-0" style={{ color: getEventColor(event.type) }}>
                 {getEventIcon(event.type)}
@@ -743,7 +717,7 @@ export default function MatchPage() {
             </div>
           ))}
           {pageState === "playing" && (
-            <div className="flex gap-3">
+            <div className="flex gap-2">
               <span className="font-pixel text-[6px] text-white/30 w-6 text-right shrink-0">&nbsp;</span>
               <span className="font-pixel text-[6px] text-white/30 pixel-blink">_</span>
             </div>
