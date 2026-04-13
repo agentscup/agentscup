@@ -1,0 +1,321 @@
+@import url("https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Inter:wght@400;500;600;700&display=swap");
+
+@import "tailwindcss";
+@config "../../tailwind.config.ts";
+
+/* ── Theme tokens ──────────────────────────────────── */
+@theme inline {
+  --color-black: #061206;
+  --color-dark: #071407;
+  --color-dark-card: #0a1e0a;
+  --color-dark-surface: #0f2a0f;
+  --color-gold: #FFD700;
+  --color-gold-dark: #B8960C;
+  --color-gold-light: #FFF4B0;
+  --color-pitch: #0B6623;
+  --color-pitch-light: #1E8F4E;
+  --color-accent: #1E8F4E;
+  --color-battle: #FF3B3B;
+  --color-live: #00AEEF;
+
+  --color-background: #061206;
+  --color-foreground: #ffffff;
+
+  --font-pixel: "Press Start 2P", monospace;
+  --font-body: "Inter", sans-serif;
+}
+
+/* ── Base styles ───────────────────────────────────── */
+body {
+  background-color: #061206;
+  color: #d4e4d4;
+  font-family: var(--font-body);
+  min-height: 100vh;
+  image-rendering: pixelated;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-pixel);
+  color: #ffffff;
+  text-shadow: 2px 2px 0px #0B6623, 4px 4px 0px rgba(0,0,0,0.5);
+  letter-spacing: 1px;
+}
+
+/* ── Pixel borders ────────────────────────────────── */
+.pixel-border {
+  border: 3px solid #1E8F4E;
+  box-shadow:
+    inset -3px -3px 0px 0px #0B6623,
+    inset 3px 3px 0px 0px #2eb060,
+    6px 6px 0px 0px rgba(0,0,0,0.3);
+}
+
+.pixel-border-sm {
+  border: 2px solid #1E8F4E;
+  box-shadow:
+    inset -2px -2px 0px 0px #0B6623,
+    inset 2px 2px 0px 0px #2eb060;
+}
+
+.pixel-border-dark {
+  border: 3px solid #1a3a1a;
+  box-shadow:
+    inset -3px -3px 0px 0px #0f250f,
+    inset 3px 3px 0px 0px #254025,
+    6px 6px 0px 0px rgba(0,0,0,0.3);
+}
+
+/* ── Pixel button ─────────────────────────────────── */
+.pixel-btn {
+  font-family: var(--font-pixel);
+  font-size: 10px;
+  padding: 12px 24px;
+  background: #1E8F4E;
+  color: #ffffff;
+  border: none;
+  box-shadow:
+    inset -4px -4px 0px 0px #0B6623,
+    inset 4px 4px 0px 0px #2eb060,
+    0 4px 0 0 #084a18;
+  cursor: pointer;
+  transition: all 0.1s;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  position: relative;
+  top: 0;
+}
+
+.pixel-btn:hover {
+  top: 2px;
+  box-shadow:
+    inset -4px -4px 0px 0px #0B6623,
+    inset 4px 4px 0px 0px #2eb060,
+    0 2px 0 0 #084a18;
+}
+
+.pixel-btn:active {
+  top: 4px;
+  box-shadow:
+    inset -4px -4px 0px 0px #0B6623,
+    inset 4px 4px 0px 0px #2eb060;
+}
+
+.pixel-btn-outline {
+  font-family: var(--font-pixel);
+  font-size: 10px;
+  padding: 12px 24px;
+  background: transparent;
+  color: #ffffff;
+  border: 3px solid #ffffff40;
+  box-shadow:
+    inset -3px -3px 0px 0px rgba(255,255,255,0.1),
+    inset 3px 3px 0px 0px rgba(255,255,255,0.2);
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.pixel-btn-outline:hover {
+  border-color: #ffffff80;
+  background: rgba(255,255,255,0.05);
+}
+
+/* ── Scanline overlay ─────────────────────────────── */
+.scanlines::after {
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 9999;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0,0,0,0.05) 2px,
+    rgba(0,0,0,0.05) 4px
+  );
+}
+
+/* ── Pixel card ───────────────────────────────────── */
+.pixel-card {
+  background: #0a1e0a;
+  border: 3px solid #1a3a1a;
+  box-shadow:
+    inset -3px -3px 0px 0px #0f250f,
+    inset 3px 3px 0px 0px #254025,
+    6px 6px 0px 0px rgba(0,0,0,0.5);
+}
+
+.pixel-card-gold {
+  background: linear-gradient(180deg, #1a1400 0%, #0a1e0a 100%);
+  border: 3px solid #FFD700;
+  box-shadow:
+    inset -3px -3px 0px 0px #B8960C,
+    inset 3px 3px 0px 0px #FFF4B0,
+    6px 6px 0px 0px rgba(0,0,0,0.5);
+}
+
+/* ── Custom scrollbar ──────────────────────────────── */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0a1e0a;
+  border: 2px solid #1a3a1a;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #1E8F4E;
+  border: 2px solid #0B6623;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #2eb060;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #1E8F4E #0a1e0a;
+}
+
+/* ── Rarity glow animations ────────────────────────── */
+@keyframes glow-legendary {
+  0%, 100% {
+    box-shadow: 0 0 8px #FFD700, 0 0 16px #FFD700, inset -3px -3px 0px 0px #B8960C, inset 3px 3px 0px 0px #FFF4B0;
+  }
+  50% {
+    box-shadow: 0 0 20px #FFD700, 0 0 40px #FFD700, 0 0 60px #FFD700, inset -3px -3px 0px 0px #B8960C, inset 3px 3px 0px 0px #FFF4B0;
+  }
+}
+
+@keyframes glow-epic {
+  0%, 100% {
+    box-shadow: 0 0 6px #C0C0C0, 0 0 12px #C0C0C0, inset -3px -3px 0px 0px #888, inset 3px 3px 0px 0px #eee;
+  }
+  50% {
+    box-shadow: 0 0 16px #C0C0C0, 0 0 32px #C0C0C0, inset -3px -3px 0px 0px #888, inset 3px 3px 0px 0px #eee;
+  }
+}
+
+@keyframes glow-rare {
+  0%, 100% {
+    box-shadow: 0 0 6px #00AEEF, 0 0 12px #00AEEF, inset -3px -3px 0px 0px #0080b0, inset 3px 3px 0px 0px #60d0ff;
+  }
+  50% {
+    box-shadow: 0 0 16px #00AEEF, 0 0 32px #00AEEF, inset -3px -3px 0px 0px #0080b0, inset 3px 3px 0px 0px #60d0ff;
+  }
+}
+
+.glow-legendary {
+  animation: glow-legendary 2s ease-in-out infinite;
+}
+
+.glow-epic {
+  animation: glow-epic 2.5s ease-in-out infinite;
+}
+
+.glow-rare {
+  animation: glow-rare 2.5s ease-in-out infinite;
+}
+
+/* ── Pixel sparkle animation ──────────────────────── */
+@keyframes pixel-sparkle {
+  0%, 100% { opacity: 0; }
+  50% { opacity: 1; }
+}
+
+@keyframes pixel-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+@keyframes pixel-blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+
+.pixel-float {
+  animation: pixel-float 3s ease-in-out infinite;
+}
+
+.pixel-blink {
+  animation: pixel-blink 1s step-end infinite;
+}
+
+/* ── 8-bit text effect ────────────────────────────── */
+.text-pixel {
+  font-family: var(--font-pixel);
+  image-rendering: pixelated;
+}
+
+.text-gold {
+  color: #FFD700;
+  text-shadow: 2px 2px 0px #B8960C;
+}
+
+.text-gold-lg {
+  color: #FFD700;
+  text-shadow: 3px 3px 0px #B8960C, 6px 6px 0px rgba(0,0,0,0.4);
+}
+
+/* ── Grid pattern background (pitch lines) ───────── */
+.bg-grid {
+  background-image:
+    linear-gradient(rgba(255,255,255,0.015) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.015) 1px, transparent 1px);
+  background-size: 16px 16px;
+}
+
+/* ── Pixel input ──────────────────────────────────── */
+.pixel-input {
+  background: #0a1e0a;
+  border: 2px solid #1a3a1a;
+  color: #ffffff;
+  font-family: var(--font-pixel);
+  font-size: 9px;
+  padding: 8px 12px;
+  box-shadow: inset -2px -2px 0px 0px #0f250f, inset 2px 2px 0px 0px #254025;
+}
+
+.pixel-input:focus {
+  border-color: #1E8F4E;
+  outline: none;
+  box-shadow: inset -2px -2px 0px 0px #0B6623, inset 2px 2px 0px 0px #2eb060;
+}
+
+.pixel-input::placeholder {
+  color: #2a4a2a;
+}
+
+/* ── Pixel select ─────────────────────────────────── */
+.pixel-select {
+  background: #0a1e0a;
+  border: 2px solid #1a3a1a;
+  color: #ffffff;
+  font-family: var(--font-pixel);
+  font-size: 8px;
+  padding: 8px 12px;
+  box-shadow: inset -2px -2px 0px 0px #0f250f, inset 2px 2px 0px 0px #254025;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8'%3E%3Cpath d='M0,0 L8,0 L4,8 Z' fill='%231E8F4E'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  padding-right: 24px;
+}
+
+.pixel-select:focus {
+  border-color: #1E8F4E;
+  outline: none;
+}
+
+.pixel-select option {
+  background: #0a1e0a;
+  color: #ffffff;
+}

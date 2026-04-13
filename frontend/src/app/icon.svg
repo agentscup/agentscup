@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" style="image-rendering:pixelated">
+  <rect width="32" height="32" fill="#000"/>
+  <!-- Globe/sphere top -->
+  <rect x="12" y="3" width="8" height="2" fill="#FFD700"/>
+  <rect x="10" y="5" width="12" height="2" fill="#FFD700"/>
+  <rect x="9" y="7" width="14" height="2" fill="#FFEC80"/>
+  <rect x="9" y="9" width="14" height="2" fill="#FFD700"/>
+  <rect x="10" y="11" width="12" height="2" fill="#E8A317"/>
+  <rect x="11" y="5" width="4" height="2" fill="#FFF4B0"/>
+  <rect x="10" y="7" width="3" height="2" fill="#FFF4B0"/>
+  <rect x="12" y="13" width="8" height="2" fill="#B8960C"/>
+  <!-- Stem -->
+  <rect x="13" y="15" width="6" height="2" fill="#FFD700"/>
+  <rect x="14" y="17" width="4" height="2" fill="#FFEC80"/>
+  <rect x="14" y="17" width="1" height="2" fill="#B8960C"/>
+  <!-- Green band -->
+  <rect x="11" y="19" width="10" height="2" fill="#2d8a4e"/>
+  <rect x="12" y="19" width="8" height="1" fill="#3cb371"/>
+  <!-- Base -->
+  <rect x="9" y="21" width="14" height="2" fill="#FFD700"/>
+  <rect x="10" y="21" width="12" height="1" fill="#FFF4B0"/>
+  <rect x="8" y="23" width="16" height="2" fill="#FFD700"/>
+  <rect x="9" y="23" width="14" height="1" fill="#FFEC80"/>
+  <rect x="8" y="25" width="16" height="1" fill="#B8960C"/>
+  <!-- Sparkles -->
+  <rect x="5" y="6" width="2" height="2" fill="#FFD700" opacity="0.9"/>
+  <rect x="5" y="5" width="2" height="4" fill="#FFF4B0" opacity="0.6"/>
+  <rect x="4" y="6" width="4" height="2" fill="#FFF4B0" opacity="0.6"/>
+  <rect x="25" y="8" width="2" height="2" fill="#FFD700" opacity="0.9"/>
+  <rect x="25" y="7" width="2" height="4" fill="#FFF4B0" opacity="0.6"/>
+  <rect x="24" y="8" width="4" height="2" fill="#FFF4B0" opacity="0.6"/>
+  <rect x="6" y="16" width="2" height="2" fill="#FFD700" opacity="0.7"/>
+  <rect x="24" y="14" width="2" height="2" fill="#FFD700" opacity="0.7"/>
+</svg>

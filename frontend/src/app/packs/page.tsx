@@ -1,0 +1,250 @@
+"use client";
+
+import { useState, useRef } from "react";
+import { useWallet, useConnection } from "@solana/wallet-adapter-react";
+import { PACK_TYPES } from "@/data/agents";
+import { Agent, PackType } from "@/types";
+import { getRarityColor } from "@/lib/utils";
+import { openPack } from "@/lib/api";
+import { mapDbAgent, type DbAgent } from "@/lib/mapAgent";
+import { createPackPurchaseTx } from "@/lib/solana";
+import AgentCard from "@/components/cards/AgentCard";
+
+function PackCard({ pack, onBuy, disabled }: { pack: PackType; onBuy: () => void; disabled: boolean }) {
+  const tierStyles: Record<string, { border: string; glow: string; accent: string }> = {
+    starter: { border: "#444", glow: "", accent: "#666" },
+    pro: { border: "#00E5FF", glow: "glow-rare", accent: "#00E5FF" },
+    elite: { border: "#C0C0C0", glow: "glow-epic", accent: "#C0C0C0" },
+    legendary: { border: "#FFD700", glow: "glow-legendary", accent: "#FFD700" },
+  };
+  const style = tierStyles[pack.id] || tierStyles.starter;
+
+  return (
+    <div
+      className={`relative ${style.glow} p-6 text-center flex flex-col h-full`}
+      style={{
+        background: "linear-gradient(180deg, #1a1a1a 0%, #111 50%, #0a0a0a 100%)",
+        border: `3px solid ${style.border}`,
+        boxShadow: `inset -3px -3px 0 ${style.border}40, inset 3px 3px 0 ${style.border}60, 6px 6px 0 rgba(0,0,0,0.5)`,
+        imageRendering: "pixelated",
+      }}
+    >
+      <div
+        className="font-pixel text-3xl mb-4"
+        style={{ color: style.accent, textShadow: `2px 2px 0 ${style.border}80` }}
+      >
+        [?]
+      </div>
+
+      <h3 className="font-pixel text-[9px] mb-2 tracking-wider" style={{ color: style.accent }}>
+        {pack.name.toUpperCase()}
+      </h3>
+      <p className="text-[10px] text-[#e0d6b8]/40 mb-4 flex-1 leading-relaxed">{pack.description}</p>
+
+      <div className="space-y-1.5 mb-4 text-left">
+        <div className="flex justify-between">
+          <span className="font-pixel text-[6px] text-white/40 tracking-wider">CARDS</span>
+          <span className="font-pixel text-[7px] text-white">{pack.cardCount}</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="font-pixel text-[6px] text-white/40 tracking-wider">RARE+</span>
+          <span className="font-pixel text-[7px] text-[#00E5FF]">{pack.rareGuarantee}</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="font-pixel text-[6px] text-white/40 tracking-wider">EPIC %</span>
+          <span className="font-pixel text-[7px] text-[#C0C0C0]">{(pack.epicChance * 100).toFixed(0)}%</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="font-pixel text-[6px] text-white/40 tracking-wider">LEGEND %</span>
+          <span className="font-pixel text-[7px] text-white">{(pack.legendaryChance * 100).toFixed(0)}%</span>
+        </div>
+      </div>
+
+      <button
+        onClick={onBuy}
+        disabled={disabled}
+        className="pixel-btn w-full text-[8px] disabled:opacity-40 disabled:cursor-not-allowed"
+      >
+        {pack.priceSol} SOL
+      </button>
+    </div>
+  );
+}
+
+export default function PacksPage() {
+  const { publicKey, signTransaction } = useWallet();
+  const { connection } = useConnection();
+  const [openedCards, setOpenedCards] = useState<Agent[]>([]);
+  const [revealIndex, setRevealIndex] = useState(-1);
+  const [isOpening, setIsOpening] = useState(false);
+  const [buying, setBuying] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Store pending tx for retry — if SOL was sent but API call failed
+  const pendingTx = useRef<{ txSignature: string; packType: string } | null>(null);
+
+  async function claimPack(txSignature: string, packType: string) {
+    if (!publicKey) return;
+
+    const result = await openPack(publicKey.toBase58(), packType, txSignature);
+    const resultData = result as { cards: Array<{ agents: unknown }>; already_processed?: boolean };
+
+    const cards = resultData.cards
+      .filter((c) => c.agents)
+      .map((c) => mapDbAgent(c.agents as DbAgent));
+
+    // Clear pending tx — pack was successfully claimed
+    pendingTx.current = null;
+
+    setOpenedCards(cards);
+    setRevealIndex(-1);
+    setIsOpening(true);
+
+    let i = 0;
+    const interval = setInterval(() => {
+      setRevealIndex(i);
+      i++;
+      if (i >= cards.length) clearInterval(interval);
+    }, 600);
+  }
+
+  async function handleBuy(pack: PackType) {
+    if (!publicKey || !signTransaction) return;
+    setError(null);
+    setBuying(true);
+
+    try {
+      // If there's a pending tx from a previous failed attempt, retry that first
+      if (pendingTx.current && pendingTx.current.packType === pack.id) {
+        await claimPack(pendingTx.current.txSignature, pack.id);
+        setBuying(false);
+        return;
+      }
+
+      // Step 1: Send SOL payment to treasury
+      const tx = await createPackPurchaseTx(publicKey, pack.priceSol);
+      const signed = await signTransaction(tx);
+      const txSignature = await connection.sendRawTransaction(signed.serialize());
+      await connection.confirmTransaction(txSignature, "confirmed");
+
+      // SOL is sent — store tx in case the API call fails
+      pendingTx.current = { txSignature, packType: pack.id };
+
+      // Step 2: Claim pack from backend (idempotent — safe to retry)
+      await claimPack(txSignature, pack.id);
+    } catch (err: unknown) {
+      let msg = err instanceof Error ? err.message : "Failed to open pack";
+
+      // Detect insufficient SOL balance
+      if (msg.includes("debit an account") || msg.includes("insufficient") || msg.includes("0x1")) {
+        msg = "Insufficient SOL balance. You need SOL in your wallet to buy packs.";
+      }
+
+      if (pendingTx.current) {
+        // SOL was sent but API failed — show retry option
+        setError(`${msg}. Your payment was sent. Click the button again to claim your pack.`);
+      } else {
+        setError(msg);
+      }
+    } finally {
+      setBuying(false);
+    }
+  }
+
+  function handleClose() {
+    setIsOpening(false);
+    setOpenedCards([]);
+    setRevealIndex(-1);
+  }
+
+  return (
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
+      <div className="text-center mb-10">
+        <h1 className="font-pixel text-sm sm:text-base text-white mb-3 tracking-wider" style={{ textShadow: "3px 3px 0 #0B6623" }}>
+          PACK STORE
+        </h1>
+        <p className="font-pixel text-[7px] text-white/40 tracking-wider">
+          {publicKey ? "OPEN PACKS TO DISCOVER NEW AGENTS" : "CONNECT YOUR WALLET TO BUY PACKS"}
+        </p>
+      </div>
+
+      {error && (
+        <div className="pixel-card p-3 mb-6 text-center" style={{ borderColor: pendingTx.current ? "#eab308" : "#ef4444" }}>
+          <p className="font-pixel text-[7px] tracking-wider" style={{ color: pendingTx.current ? "#eab308" : "#ef4444" }}>
+            {error}
+          </p>
+        </div>
+      )}
+
+      {/* Pack grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 max-w-4xl mx-auto">
+        {PACK_TYPES.map((pack) => (
+          <PackCard
+            key={pack.id}
+            pack={pack}
+            onBuy={() => handleBuy(pack)}
+            disabled={!publicKey || buying}
+          />
+        ))}
+      </div>
+
+      {buying && (
+        <div className="text-center mt-6">
+          <div className="font-pixel text-[8px] text-white/60 tracking-wider animate-pulse">
+            {pendingTx.current ? "CLAIMING YOUR PACK..." : "PROCESSING TRANSACTION..."}
+          </div>
+        </div>
+      )}
+
+      {/* Pack opening overlay */}
+      {isOpening && (
+        <div className="fixed inset-0 z-50 bg-black/95 flex flex-col items-center justify-center p-4">
+          <h2 className="font-pixel text-[10px] sm:text-xs text-white mb-6 tracking-wider" style={{ textShadow: "2px 2px 0 #0B6623" }}>
+            {revealIndex < openedCards.length - 1 ? "REVEALING..." : "PACK COMPLETE!"}
+          </h2>
+
+          <div className="flex flex-wrap justify-center gap-3 max-w-4xl mb-8">
+            {openedCards.map((card, i) => (
+              <div
+                key={`${card.id}-${i}`}
+                className="transition-all duration-500"
+                style={{
+                  opacity: i <= revealIndex ? 1 : 0.15,
+                  transform: i <= revealIndex ? "scale(1) rotateY(0)" : "scale(0.8) rotateY(180deg)",
+                  transitionDelay: `${i * 50}ms`,
+                }}
+              >
+                {i <= revealIndex ? (
+                  <div className="animate-[slide-up_0.4s_ease-out]">
+                    <AgentCard agent={card} size="sm" />
+                  </div>
+                ) : (
+                  <AgentCard agent={card} size="sm" isFlipped />
+                )}
+              </div>
+            ))}
+          </div>
+
+          {revealIndex >= openedCards.length - 1 && (
+            <div className="text-center animate-[fade-in_0.5s_ease-out]">
+              <div className="flex justify-center gap-4 mb-6">
+                {["legendary", "epic", "rare", "common"].map((r) => {
+                  const count = openedCards.filter((c) => c.rarity === r).length;
+                  if (count === 0) return null;
+                  return (
+                    <span key={r} className="font-pixel text-[7px] tracking-wider" style={{ color: getRarityColor(r as "legendary") }}>
+                      {count}x {r.toUpperCase()}
+                    </span>
+                  );
+                })}
+              </div>
+              <button onClick={handleClose} className="pixel-btn text-[9px]">
+                CONTINUE
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}

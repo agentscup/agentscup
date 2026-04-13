@@ -1,0 +1,94 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id            String   @id @default(cuid())
+  walletAddress String   @unique
+  username      String?
+  elo           Int      @default(1000)
+  xp            Int      @default(0)
+  createdAt     DateTime @default(now())
+  agents        UserAgent[]
+  squads        Squad[]
+  matchesHome   Match[]  @relation("HomePlayer")
+  matchesAway   Match[]  @relation("AwayPlayer")
+}
+
+model Agent {
+  id          String      @id @default(cuid())
+  name        String      @unique
+  position    String
+  overall     Int
+  pace        Int
+  shooting    Int
+  passing     Int
+  dribbling   Int
+  defending   Int
+  physical    Int
+  rarity      String
+  flavorText  String
+  techStack   String
+  avatarSvg   String      @db.Text
+  userAgents  UserAgent[]
+}
+
+model UserAgent {
+  id          String    @id @default(cuid())
+  userId      String
+  agentId     String
+  mintAddress String    @unique
+  level       Int       @default(1)
+  xp          Int       @default(0)
+  isListed    Boolean   @default(false)
+  user        User      @relation(fields: [userId], references: [id])
+  agent       Agent     @relation(fields: [agentId], references: [id])
+  listing     Listing?
+  createdAt   DateTime  @default(now())
+}
+
+model Squad {
+  id          String   @id @default(cuid())
+  userId      String
+  name        String
+  formation   String
+  chemistry   Int      @default(50)
+  positions   Json
+  managerId   String?
+  user        User     @relation(fields: [userId], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Match {
+  id           String   @id @default(cuid())
+  homePlayerId String
+  awayPlayerId String
+  homeScore    Int?
+  awayScore    Int?
+  homeSquadId  String
+  awaySquadId  String
+  status       String   @default("pending")
+  log          Json?
+  stakeSol     Float    @default(0)
+  winner       String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  homePlayer   User     @relation("HomePlayer", fields: [homePlayerId], references: [id])
+  awayPlayer   User     @relation("AwayPlayer", fields: [awayPlayerId], references: [id])
+}
+
+model Listing {
+  id           String   @id @default(cuid())
+  userAgentId  String   @unique
+  sellerWallet String
+  priceSol     Float
+  listingType  String
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+  userAgent    UserAgent @relation(fields: [userAgentId], references: [id])
+}
