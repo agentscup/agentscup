@@ -5,7 +5,18 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
-import { useWalletModal } from "@solana/wallet-adapter-react-ui";
+import dynamic from "next/dynamic";
+
+/*
+ * WalletMultiButton must be dynamically imported with ssr:false
+ * to avoid hydration mismatch and Safari issues.
+ * It handles: modal open, wallet detection, connect/disconnect,
+ * deep-link fallbacks, and all browser edge cases.
+ */
+const WalletMultiButton = dynamic(
+  () => import("@solana/wallet-adapter-react-ui").then((mod) => mod.WalletMultiButton),
+  { ssr: false },
+);
 
 const NAV_LINKS = [
   { href: "/", label: "HOME" },
@@ -19,22 +30,30 @@ const NAV_LINKS = [
 export default function Navbar() {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const { connected, publicKey, disconnect } = useWallet();
-  const { setVisible } = useWalletModal();
-
-  const walletAddress = publicKey?.toBase58();
-  const shortAddr = walletAddress ? `${walletAddress.slice(0, 4)}...${walletAddress.slice(-4)}` : "";
+  const { connected } = useWallet();
 
   return (
-    <nav className="sticky top-0 z-50 bg-[#061206]/95 backdrop-blur-sm" style={{ borderBottom: "3px solid #1E8F4E", boxShadow: "0 3px 0 0 #0B6623" }}>
+    <nav
+      className="sticky top-0 z-50 bg-[#061206]/95 backdrop-blur-sm"
+      style={{ borderBottom: "3px solid #1E8F4E", boxShadow: "0 3px 0 0 #0B6623" }}
+    >
       <div className="max-w-7xl mx-auto px-4 sm:px-6">
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
           <Link href="/" className="flex items-center gap-2 shrink-0 group">
             <div className="pixel-float" style={{ imageRendering: "pixelated" }}>
-              <Image src="/trophy.svg" alt="Agents Cup" width={28} height={28} className="drop-shadow-[0_0_8px_rgba(30,143,78,0.4)]" />
+              <Image
+                src="/trophy.svg"
+                alt="Agents Cup"
+                width={28}
+                height={28}
+                className="drop-shadow-[0_0_8px_rgba(30,143,78,0.4)]"
+              />
             </div>
-            <span className="font-pixel text-[10px] sm:text-xs text-white tracking-wider" style={{ textShadow: "2px 2px 0 #0B6623" }}>
+            <span
+              className="font-pixel text-[10px] sm:text-xs text-white tracking-wider"
+              style={{ textShadow: "2px 2px 0 #0B6623" }}
+            >
               AGENTS CUP
             </span>
           </Link>
@@ -52,7 +71,11 @@ export default function Navbar() {
                       ? "text-white bg-[#1E8F4E]"
                       : "text-white/60 hover:text-white hover:bg-white/5"
                   }`}
-                  style={isActive ? { boxShadow: "inset -2px -2px 0 #0B6623, inset 2px 2px 0 #2eb060" } : {}}
+                  style={
+                    isActive
+                      ? { boxShadow: "inset -2px -2px 0 #0B6623, inset 2px 2px 0 #2eb060" }
+                      : {}
+                  }
                 >
                   {link.label}
                 </Link>
@@ -60,28 +83,9 @@ export default function Navbar() {
             })}
           </div>
 
-          {/* Wallet button */}
-          <div className="hidden md:block">
-            {connected ? (
-              <div className="flex items-center gap-2">
-                <span className="font-pixel text-[7px] text-white/50">{shortAddr}</span>
-                <button
-                  onClick={() => disconnect()}
-                  className="font-pixel text-[7px] py-1.5 px-3 text-white border-2 border-white/30 hover:bg-white/10 transition-colors"
-                  style={{ boxShadow: "inset -2px -2px 0 rgba(255,255,255,0.1), inset 2px 2px 0 rgba(255,255,255,0.2)" }}
-                >
-                  DISCONNECT
-                </button>
-              </div>
-            ) : (
-              <button
-                onClick={() => setVisible(true)}
-                className="font-pixel text-[7px] py-2 px-4 bg-[#1E8F4E] text-[#050e05] hover:bg-[#2eb060] transition-colors"
-                style={{ boxShadow: "inset -3px -3px 0 #0B6623, inset 3px 3px 0 #2eb060, 0 3px 0 0 #084a18" }}
-              >
-                CONNECT
-              </button>
-            )}
+          {/* Wallet button — desktop */}
+          <div className="hidden md:block wallet-btn-wrapper">
+            <WalletMultiButton />
           </div>
 
           {/* Mobile hamburger */}
@@ -113,22 +117,10 @@ export default function Navbar() {
                 </Link>
               );
             })}
-            {connected ? (
-              <button
-                onClick={() => disconnect()}
-                className="w-full mt-2 font-pixel text-[8px] py-2 text-white border-2 border-white/30 hover:bg-white/10"
-              >
-                {shortAddr} - DISCONNECT
-              </button>
-            ) : (
-              <button
-                onClick={() => setVisible(true)}
-                className="w-full mt-2 font-pixel text-[8px] py-2 bg-[#1E8F4E] text-[#050e05]"
-                style={{ boxShadow: "inset -3px -3px 0 #0B6623, inset 3px 3px 0 #2eb060" }}
-              >
-                CONNECT WALLET
-              </button>
-            )}
+            {/* Wallet button — mobile */}
+            <div className="pt-2 wallet-btn-wrapper wallet-btn-mobile">
+              <WalletMultiButton />
+            </div>
           </div>
         )}
       </div>

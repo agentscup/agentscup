@@ -6,7 +6,12 @@ import {
   WalletProvider as SolanaWalletProvider,
 } from "@solana/wallet-adapter-react";
 import { WalletModalProvider } from "@solana/wallet-adapter-react-ui";
-import { PhantomWalletAdapter } from "@solana/wallet-adapter-wallets";
+import { PhantomWalletAdapter } from "@solana/wallet-adapter-phantom";
+import { SolflareWalletAdapter } from "@solana/wallet-adapter-solflare";
+import { CoinbaseWalletAdapter } from "@solana/wallet-adapter-coinbase";
+import { TrustWalletAdapter } from "@solana/wallet-adapter-trust";
+import { LedgerWalletAdapter } from "@solana/wallet-adapter-ledger";
+import { TorusWalletAdapter } from "@solana/wallet-adapter-torus";
 import { clusterApiUrl } from "@solana/web3.js";
 
 import "@solana/wallet-adapter-react-ui/styles.css";
@@ -18,9 +23,20 @@ interface Props {
 const WalletProvider: FC<Props> = ({ children }) => {
   const endpoint = useMemo(
     () => process.env.NEXT_PUBLIC_SOLANA_RPC_URL || clusterApiUrl("mainnet-beta"),
-    []
+    [],
   );
-  const wallets = useMemo(() => [new PhantomWalletAdapter()], []);
+
+  const wallets = useMemo(
+    () => [
+      new PhantomWalletAdapter(),
+      new SolflareWalletAdapter(),
+      new CoinbaseWalletAdapter(),
+      new TrustWalletAdapter(),
+      new LedgerWalletAdapter(),
+      new TorusWalletAdapter(),
+    ],
+    [],
+  );
 
   return (
     <ConnectionProvider endpoint={endpoint}>
