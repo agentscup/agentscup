@@ -9,10 +9,12 @@ import {
   sendAndConfirmTransaction,
 } from "@solana/web3.js";
 import {
-  getAssociatedTokenAddress,
+  getAssociatedTokenAddressSync,
   createTransferInstruction,
   getAccount,
   createAssociatedTokenAccountInstruction,
+  TOKEN_2022_PROGRAM_ID,
+  ASSOCIATED_TOKEN_PROGRAM_ID,
 } from "@solana/spl-token";
 import dotenv from "dotenv";
 dotenv.config();
@@ -230,10 +232,10 @@ export async function sendTokenPayout(
     const recipient = new PublicKey(recipientWallet);
     const rawAmount = tokenToRaw(tokenAmount);
 
-    const treasuryAta = await getAssociatedTokenAddress(TOKEN_MINT, treasury.publicKey);
-    const recipientAta = await getAssociatedTokenAddress(TOKEN_MINT, recipient);
+    const treasuryAta = getAssociatedTokenAddressSync(TOKEN_MINT, treasury.publicKey, false, TOKEN_2022_PROGRAM_ID);
+    const recipientAta = getAssociatedTokenAddressSync(TOKEN_MINT, recipient, false, TOKEN_2022_PROGRAM_ID);
 
-    const treasuryTokenAccount = await getAccount(connection, treasuryAta);
+    const treasuryTokenAccount = await getAccount(connection, treasuryAta, "confirmed", TOKEN_2022_PROGRAM_ID);
     if (treasuryTokenAccount.amount < rawAmount) {
       return { success: false, error: `Insufficient treasury token balance` };
     }
@@ -242,17 +244,18 @@ export async function sendTokenPayout(
 
     // Create recipient ATA if needed
     try {
-      await getAccount(connection, recipientAta);
+      await getAccount(connection, recipientAta, "confirmed", TOKEN_2022_PROGRAM_ID);
     } catch {
       tx.add(
         createAssociatedTokenAccountInstruction(
-          treasury.publicKey, recipientAta, recipient, TOKEN_MINT
+          treasury.publicKey, recipientAta, recipient, TOKEN_MINT,
+          TOKEN_2022_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID
         )
       );
     }
 
     tx.add(
-      createTransferInstruction(treasuryAta, recipientAta, treasury.publicKey, rawAmount)
+      createTransferInstruction(treasuryAta, recipientAta, treasury.publicKey, rawAmount, [], TOKEN_2022_PROGRAM_ID)
     );
 
     const signature = await sendAndConfirmTransaction(connection, tx, [treasury], {

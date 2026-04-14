@@ -7,10 +7,12 @@ import {
   clusterApiUrl,
 } from "@solana/web3.js";
 import {
-  getAssociatedTokenAddress,
+  getAssociatedTokenAddressSync,
   createTransferInstruction,
   createAssociatedTokenAccountInstruction,
   getAccount,
+  TOKEN_2022_PROGRAM_ID,
+  ASSOCIATED_TOKEN_PROGRAM_ID,
 } from "@solana/spl-token";
 
 const cluster = (process.env.NEXT_PUBLIC_SOLANA_CLUSTER || "mainnet-beta") as "devnet" | "mainnet-beta";
@@ -115,7 +117,7 @@ function tokenToRaw(amount: number): bigint {
   return BigInt(amount) * BigInt(10 ** TOKEN_DECIMALS);
 }
 
-/** Send SPL tokens to treasury for staking */
+/** Send $CUP tokens (Token-2022) to treasury for staking */
 export async function sendStakeTransaction(
   conn: Connection,
   payerPubkey: PublicKey,
@@ -124,24 +126,25 @@ export async function sendStakeTransaction(
 ): Promise<string> {
   const rawAmount = tokenToRaw(tokenAmount);
 
-  const payerAta = await getAssociatedTokenAddress(TOKEN_MINT, payerPubkey);
-  const treasuryAta = await getAssociatedTokenAddress(TOKEN_MINT, TREASURY_WALLET);
+  const payerAta = getAssociatedTokenAddressSync(TOKEN_MINT, payerPubkey, false, TOKEN_2022_PROGRAM_ID);
+  const treasuryAta = getAssociatedTokenAddressSync(TOKEN_MINT, TREASURY_WALLET, false, TOKEN_2022_PROGRAM_ID);
 
   const tx = new Transaction();
 
-  // Create treasury ATA if needed
+  // Create treasury ATA if needed (Token-2022)
   try {
-    await getAccount(conn, treasuryAta);
+    await getAccount(conn, treasuryAta, "confirmed", TOKEN_2022_PROGRAM_ID);
   } catch {
     tx.add(
       createAssociatedTokenAccountInstruction(
-        payerPubkey, treasuryAta, TREASURY_WALLET, TOKEN_MINT
+        payerPubkey, treasuryAta, TREASURY_WALLET, TOKEN_MINT,
+        TOKEN_2022_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID
       )
     );
   }
 
   tx.add(
-    createTransferInstruction(payerAta, treasuryAta, payerPubkey, rawAmount)
+    createTransferInstruction(payerAta, treasuryAta, payerPubkey, rawAmount, [], TOKEN_2022_PROGRAM_ID)
   );
 
   const { blockhash } = await conn.getLatestBlockhash();
@@ -154,12 +157,12 @@ export async function sendStakeTransaction(
   return signature;
 }
 
-/** Get $CUP token balance for a wallet */
+/** Get $CUP token balance (Token-2022) for a wallet */
 export async function getTokenBalance(walletAddress: string): Promise<number> {
   try {
     const pubkey = new PublicKey(walletAddress);
-    const ata = await getAssociatedTokenAddress(TOKEN_MINT, pubkey);
-    const account = await getAccount(connection, ata);
+    const ata = getAssociatedTokenAddressSync(TOKEN_MINT, pubkey, false, TOKEN_2022_PROGRAM_ID);
+    const account = await getAccount(connection, ata, "confirmed", TOKEN_2022_PROGRAM_ID);
     return Number(account.amount) / (10 ** TOKEN_DECIMALS);
   } catch {
     return 0;
