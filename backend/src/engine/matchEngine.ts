@@ -1,6 +1,7 @@
 /* ================================================================== */
 /*  Deterministic Match Simulation Engine                              */
 /*  Same seed + same inputs = same result, always                      */
+/*  Stronger teams win proportionally more often                       */
 /* ================================================================== */
 
 // Mulberry32 seeded PRNG
@@ -96,6 +97,28 @@ function pickRandom<T>(arr: T[], rng: () => number): T {
   return arr[Math.floor(rng() * arr.length)];
 }
 
+/**
+ * Stat-weighted roll: stronger stat = higher floor, less randomness can upset.
+ * statRoll(90, rng) → range [54, 90]  (floor 60%)
+ * statRoll(60, rng) → range [36, 60]  (floor 60%)
+ * So a 90-stat team ALWAYS beats a 60-stat team's minimum.
+ */
+function statRoll(stat: number, rng: () => number): number {
+  return stat * (0.6 + rng() * 0.4);
+}
+
+/**
+ * Power ratio: amplifies strength gaps.
+ * powerEdge(85, 65) → ~1.71 (strong advantage)
+ * powerEdge(75, 75) → 1.0  (even)
+ * powerEdge(65, 85) → ~0.58 (disadvantage)
+ * Uses squared ratio for steeper curve.
+ */
+function powerEdge(myStr: number, theirStr: number): number {
+  const ratio = myStr / Math.max(1, theirStr);
+  return ratio * ratio; // squared = bigger gaps matter way more
+}
+
 const ATTACK_VERBS = ["sprints past", "dribbles around", "beats", "outpaces", "nutmegs", "skips past"];
 const SHOT_VERBS = ["fires a rocket", "unleashes a shot", "strikes from distance", "curls one", "volleys", "takes a shot"];
 const SAVE_PHRASES = ["pulls off a brilliant save", "denies the shot", "parries it away", "makes an incredible stop", "dives to save"];
@@ -155,6 +178,14 @@ export function simulateMatch(home: SquadInput, away: SquadInput, seed: number):
   const awayDefense = avg(awayDEF.map((p) => (p.defending + p.physical + p.pace) / 3));
   const awayKeeping = awayGK.length > 0 ? avg(awayGK.map((p) => (p.defending + p.physical) / 2)) : 50;
 
+  // Overall team power (0-99 scale)
+  const homePower = (homeAttack + homeMidfield + homeDefense + homeKeeping) / 4;
+  const awayPower = (awayAttack + awayMidfield + awayDefense + awayKeeping) / 4;
+
+  // Power edge multipliers (squared ratio — big gaps = huge advantage)
+  const homeEdge = powerEdge(homePower, awayPower);
+  const awayEdge = powerEdge(awayPower, homePower);
+
   // Kick off
   events.push({
     minute: 0,
@@ -170,9 +201,11 @@ export function simulateMatch(home: SquadInput, away: SquadInput, seed: number):
 
   // Simulate 90 minutes
   for (let minute = 1; minute <= 90; minute++) {
-    // Determine possession
+    // ─── Possession: stronger midfield dominates ───────────
     const possRoll = rng();
-    const homeChance = homeMidfield / (homeMidfield + awayMidfield) + (rng() - 0.5) * 0.2;
+    const homeMidPower = homeMidfield * homeMidfield; // squared
+    const awayMidPower = awayMidfield * awayMidfield;
+    const homeChance = homeMidPower / (homeMidPower + awayMidPower) + (rng() - 0.5) * 0.1;
     const isHomePoss = possRoll < homeChance;
 
     if (isHomePoss) homePossCount++;
@@ -190,6 +223,7 @@ export function simulateMatch(home: SquadInput, away: SquadInput, seed: number):
     const keepStr = isHomePoss ? awayKeeping : homeKeeping;
     const midStr = isHomePoss ? homeMidfield : awayMidfield;
     const defMidStr = isHomePoss ? awayMidfield : homeMidfield;
+    const teamEdge = isHomePoss ? homeEdge : awayEdge;
 
     // Half time
     if (minute === 45) {
@@ -202,10 +236,12 @@ export function simulateMatch(home: SquadInput, away: SquadInput, seed: number):
       });
     }
 
-    // Midfield battle — chance of an attack developing (much higher now)
-    const attackChance = 0.38 + (midStr - defMidStr) / 400;
+    // ─── Midfield battle — stronger team creates more attacks ──
+    // Base 38% + midfield edge (capped so max ~65% for dominant team)
+    const midEdge = powerEdge(midStr, defMidStr);
+    const attackChance = Math.min(0.65, 0.28 + 0.12 * midEdge);
     if (rng() > attackChance) {
-      // Even when no attack develops, show midfield activity (~40% of non-attack minutes)
+      // Even when no attack develops, show midfield activity
       if (rng() < 0.40) {
         const allMid = isHomePoss ? homeMID : awayMID;
         const allDef = isHomePoss ? homeDEF : awayDEF;
@@ -226,7 +262,7 @@ export function simulateMatch(home: SquadInput, away: SquadInput, seed: number):
 
     // ─── Attack phase ──────────────────────────────────────
 
-    // Pass event (more frequent)
+    // Pass event
     if (attackMid.length > 0 && attackFwd.length > 0 && rng() < 0.55) {
       const passer = pickRandom(attackMid, rng);
       const target = pickRandom(attackFwd, rng);
@@ -254,14 +290,15 @@ export function simulateMatch(home: SquadInput, away: SquadInput, seed: number):
       addPerf(attackTeam, dribbler.name, 1);
     }
 
-    // Tackle / Foul event
+    // Tackle / Foul event — stronger defenders stop attacks more reliably
     if (defDEF.length > 0 && rng() < 0.45) {
       const defender = pickRandom(defDEF, rng);
       const attacker = attackFwd.length > 0 ? pickRandom(attackFwd, rng) : pickRandom(attackMid, rng);
-      const tackleSuccess = rng() < (defender.defending / (defender.defending + attacker.dribbling));
+      const defRoll = statRoll(defender.defending, rng);
+      const driRoll = statRoll(attacker.dribbling, rng);
+      const tackleSuccess = defRoll > driRoll;
 
       if (tackleSuccess) {
-        // Clean tackle or foul?
         if (rng() < 0.3) {
           // Foul
           events.push({
@@ -273,7 +310,6 @@ export function simulateMatch(home: SquadInput, away: SquadInput, seed: number):
             description: `${defender.name} ${pickRandom(FOUL_PHRASES, rng)} ${attacker.name}. Free kick!`,
           });
 
-          // Card chance on foul
           if (rng() < 0.12) {
             cardCount++;
             const isRed = rng() < 0.08;
@@ -285,7 +321,6 @@ export function simulateMatch(home: SquadInput, away: SquadInput, seed: number):
               description: `${isRed ? "RED" : "YELLOW"} CARD for ${defender.name}! ${isRed ? "Sent off!" : "Goes into the book."}`,
             });
           }
-          // Free kick doesn't always stop the play — 40% leads to a shot
           if (rng() > 0.4) continue;
         } else {
           // Clean tackle
@@ -303,27 +338,32 @@ export function simulateMatch(home: SquadInput, away: SquadInput, seed: number):
       }
     }
 
-    // Attack vs Defense
-    const attackRoll = rng() * attackStr;
-    const defenseRoll = rng() * defStr;
+    // ─── Attack vs Defense — stat-weighted rolls ─────────────
+    const attackRoll = statRoll(attackStr, rng);
+    const defenseRoll = statRoll(defStr, rng);
 
-    if (attackRoll <= defenseRoll * 0.7) continue; // Defense holds
+    // Stronger attack breaks through more easily (0.75 threshold instead of 0.7)
+    if (attackRoll <= defenseRoll * 0.75) continue;
 
     // Shot!
     const shooter = attackFwd.length > 0 ? pickRandom(attackFwd, rng) : pickRandom(attackMid, rng);
     if (attackTeam === "home") homeShots++;
     else awayShots++;
 
-    const shotQuality = (shooter.shooting / 99) * rng();
-    const saveQuality = (keepStr / 99) * rng();
+    // Shot & save quality use statRoll (60% floor) — better stats = WAY more consistent
+    const shotQuality = statRoll(shooter.shooting, rng) / 99;
+    const saveQuality = statRoll(keepStr, rng) / 99;
     const keeper = defGK.length > 0 ? defGK[0] : { name: "Keeper" } as PlayerInput;
 
-    if (shotQuality > saveQuality * 0.9) {
+    // Apply team power edge to shot quality — stronger teams convert more
+    const adjustedShot = shotQuality * (0.7 + 0.3 * teamEdge);
+
+    if (adjustedShot > saveQuality * 0.85) {
       // Shot on target
       if (attackTeam === "home") homeShotsOnTarget++;
       else awayShotsOnTarget++;
 
-      if (shotQuality > saveQuality * 1.1 + 0.05) {
+      if (adjustedShot > saveQuality * 1.05 + 0.03) {
         // GOAL!
         if (attackTeam === "home") homeScore++;
         else awayScore++;
@@ -369,7 +409,7 @@ export function simulateMatch(home: SquadInput, away: SquadInput, seed: number):
         attackTeam === "home"
           ? [...homeDEF, ...homeMID, ...homeFWD]
           : [...awayDEF, ...awayMID, ...awayFWD],
-        rng
+        rng,
       );
       events.push({
         minute,
@@ -385,24 +425,27 @@ export function simulateMatch(home: SquadInput, away: SquadInput, seed: number):
   const injuryTime = Math.min(5, 1 + Math.floor(cardCount * 0.5 + injuryCount * 1.5 + rng() * 2));
   for (let minute = 91; minute <= 90 + injuryTime; minute++) {
     const possRoll = rng();
-    const homeChance = homeMidfield / (homeMidfield + awayMidfield);
+    const homeMidPower = homeMidfield * homeMidfield;
+    const awayMidPower = awayMidfield * awayMidfield;
+    const homeChance = homeMidPower / (homeMidPower + awayMidPower);
     const isHomePoss = possRoll < homeChance;
     const attackTeam: "home" | "away" = isHomePoss ? "home" : "away";
     const attackFwd = isHomePoss ? homeFWD : awayFWD;
     const attackMid = isHomePoss ? homeMID : awayMID;
     const defGK = isHomePoss ? awayGK : homeGK;
     const keepStr = isHomePoss ? awayKeeping : homeKeeping;
+    const teamEdge = isHomePoss ? homeEdge : awayEdge;
 
     if (rng() < 0.12 && attackFwd.length > 0) {
       const shooter = pickRandom(attackFwd, rng);
       if (attackTeam === "home") homeShots++;
       else awayShots++;
 
-      const shotQuality = (shooter.shooting / 99) * rng();
-      const saveQuality = (keepStr / 99) * rng();
-      const keeper = defGK.length > 0 ? defGK[0] : { name: "Keeper" } as PlayerInput;
+      const shotQuality = statRoll(shooter.shooting, rng) / 99;
+      const saveQuality = statRoll(keepStr, rng) / 99;
+      const adjustedShot = shotQuality * (0.7 + 0.3 * teamEdge);
 
-      if (shotQuality > saveQuality * 1.1 + 0.05) {
+      if (adjustedShot > saveQuality * 1.05 + 0.03) {
         if (attackTeam === "home") { homeScore++; homeShotsOnTarget++; }
         else { awayScore++; awayShotsOnTarget++; }
         events.push({
