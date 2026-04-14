@@ -99,24 +99,22 @@ function pickRandom<T>(arr: T[], rng: () => number): T {
 
 /**
  * Stat-weighted roll: stronger stat = higher floor, less randomness can upset.
- * statRoll(90, rng) → range [54, 90]  (floor 60%)
- * statRoll(60, rng) → range [36, 60]  (floor 60%)
- * So a 90-stat team ALWAYS beats a 60-stat team's minimum.
+ * statRoll(90, rng) → range [40.5, 90]  (floor 45%)
+ * statRoll(60, rng) → range [27, 60]    (floor 45%)
  */
 function statRoll(stat: number, rng: () => number): number {
-  return stat * (0.6 + rng() * 0.4);
+  return stat * (0.45 + rng() * 0.55);
 }
 
 /**
- * Power ratio: amplifies strength gaps.
- * powerEdge(85, 65) → ~1.71 (strong advantage)
+ * Power ratio: amplifies strength gaps (ratio^1.5 — moderate curve).
+ * powerEdge(85, 65) → ~1.41 (solid advantage)
  * powerEdge(75, 75) → 1.0  (even)
- * powerEdge(65, 85) → ~0.58 (disadvantage)
- * Uses squared ratio for steeper curve.
+ * powerEdge(65, 85) → ~0.71 (disadvantage)
  */
 function powerEdge(myStr: number, theirStr: number): number {
   const ratio = myStr / Math.max(1, theirStr);
-  return ratio * ratio; // squared = bigger gaps matter way more
+  return Math.pow(ratio, 1.5);
 }
 
 const ATTACK_VERBS = ["sprints past", "dribbles around", "beats", "outpaces", "nutmegs", "skips past"];
@@ -205,7 +203,7 @@ export function simulateMatch(home: SquadInput, away: SquadInput, seed: number):
     const possRoll = rng();
     const homeMidPower = homeMidfield * homeMidfield; // squared
     const awayMidPower = awayMidfield * awayMidfield;
-    const homeChance = homeMidPower / (homeMidPower + awayMidPower) + (rng() - 0.5) * 0.1;
+    const homeChance = homeMidPower / (homeMidPower + awayMidPower) + (rng() - 0.5) * 0.15;
     const isHomePoss = possRoll < homeChance;
 
     if (isHomePoss) homePossCount++;
@@ -239,7 +237,7 @@ export function simulateMatch(home: SquadInput, away: SquadInput, seed: number):
     // ─── Midfield battle — stronger team creates more attacks ──
     // Base 38% + midfield edge (capped so max ~65% for dominant team)
     const midEdge = powerEdge(midStr, defMidStr);
-    const attackChance = Math.min(0.65, 0.28 + 0.12 * midEdge);
+    const attackChance = Math.min(0.60, 0.30 + 0.10 * midEdge);
     if (rng() > attackChance) {
       // Even when no attack develops, show midfield activity
       if (rng() < 0.40) {
@@ -356,14 +354,14 @@ export function simulateMatch(home: SquadInput, away: SquadInput, seed: number):
     const keeper = defGK.length > 0 ? defGK[0] : { name: "Keeper" } as PlayerInput;
 
     // Apply team power edge to shot quality — stronger teams convert more
-    const adjustedShot = shotQuality * (0.7 + 0.3 * teamEdge);
+    const adjustedShot = shotQuality * (0.75 + 0.25 * teamEdge);
 
-    if (adjustedShot > saveQuality * 0.85) {
+    if (adjustedShot > saveQuality * 0.88) {
       // Shot on target
       if (attackTeam === "home") homeShotsOnTarget++;
       else awayShotsOnTarget++;
 
-      if (adjustedShot > saveQuality * 1.05 + 0.03) {
+      if (adjustedShot > saveQuality * 1.08 + 0.04) {
         // GOAL!
         if (attackTeam === "home") homeScore++;
         else awayScore++;
@@ -443,9 +441,9 @@ export function simulateMatch(home: SquadInput, away: SquadInput, seed: number):
 
       const shotQuality = statRoll(shooter.shooting, rng) / 99;
       const saveQuality = statRoll(keepStr, rng) / 99;
-      const adjustedShot = shotQuality * (0.7 + 0.3 * teamEdge);
+      const adjustedShot = shotQuality * (0.75 + 0.25 * teamEdge);
 
-      if (adjustedShot > saveQuality * 1.05 + 0.03) {
+      if (adjustedShot > saveQuality * 1.08 + 0.04) {
         if (attackTeam === "home") { homeScore++; homeShotsOnTarget++; }
         else { awayScore++; awayShotsOnTarget++; }
         events.push({
