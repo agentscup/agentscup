@@ -1,83 +1,133 @@
 "use client";
 
 /* ================================================================== */
-/*  Match Sound Engine — Real Stadium Audio Files                      */
-/*  Uses pre-loaded MP3 files for authentic football atmosphere        */
+/*  Match Sound Engine — AudioContext + Pre-decoded Buffers             */
+/*  Loads MP3 files once into memory, plays instantly on every trigger  */
 /* ================================================================== */
 
+let ctx: AudioContext | null = null;
+let masterGain: GainNode | null = null;
 let isMuted = false;
 let masterVolume = 0.7;
-let ambientAudio: HTMLAudioElement | null = null;
-let initialized = false;
+let loadingPromise: Promise<void> | null = null;
+let loaded = false;
 
-/* ─── Sound file paths ────────��───────────────────────────��───────── */
+/* Currently playing ambient source */
+let ambientSource: AudioBufferSourceNode | null = null;
+let ambientGain: GainNode | null = null;
 
-const SOUNDS = {
-  goal: "/sounds/goal.mp3",       // Stadium crowd eruption on goal
-  boo: "/sounds/boo.mp3",         // Crowd booing / disappointment
-  whistle: "/sounds/whistle.mp3", // Referee football whistle
-  gasp: "/sounds/gasp.mp3",       // Crowd gasp with reverb
-  ambient: "/sounds/ambient.mp3", // Stadium crowd ambience (1:34 loop)
-  victory: "/sounds/victory.mp3", // Crowd cheering & clapping celebration
-  chant: "/sounds/chant.mp3",     // Football stadium chanting & cheering
-  shocked: "/sounds/shocked.mp3", // Crowd shocked reaction
-} as const;
+/* Pre-decoded audio buffers */
+const buffers: Record<string, AudioBuffer> = {};
 
-/* ─── Preload all sounds into browser cache ───────────────────────── */
+/* ─── Sound file paths ────────────────────────────────────────────── */
 
-function preloadAll() {
-  if (initialized) return;
-  Object.values(SOUNDS).forEach((src) => {
-    const a = new Audio(src);
-    a.preload = "auto";
-    a.load();
-  });
-  initialized = true;
+const SOUNDS: Record<string, string> = {
+  goal: "/sounds/goal.mp3",
+  boo: "/sounds/boo.mp3",
+  whistle: "/sounds/whistle.mp3",
+  gasp: "/sounds/gasp.mp3",
+  ambient: "/sounds/ambient.mp3",
+  victory: "/sounds/victory.mp3",
+  chant: "/sounds/chant.mp3",
+  shocked: "/sounds/shocked.mp3",
+};
+
+/* ================================================================== */
+/*  Initialisation — create AudioContext + load all buffers             */
+/* ================================================================== */
+
+function ensureCtx(): AudioContext {
+  if (!ctx) {
+    ctx = new AudioContext();
+    masterGain = ctx.createGain();
+    masterGain.gain.value = isMuted ? 0 : masterVolume;
+    masterGain.connect(ctx.destination);
+  }
+  if (ctx.state === "suspended") {
+    ctx.resume().catch(() => {});
+  }
+  return ctx;
 }
 
-/* ─── Play a sound (new Audio instance for overlapping support) ───── */
+async function loadBuffer(key: string, url: string): Promise<void> {
+  const c = ensureCtx();
+  try {
+    const res = await fetch(url);
+    const arr = await res.arrayBuffer();
+    buffers[key] = await c.decodeAudioData(arr);
+  } catch (err) {
+    console.warn(`[SFX] Failed to load ${key}:`, err);
+  }
+}
 
-function play(
-  key: keyof typeof SOUNDS,
+/** Load all sound files into decoded AudioBuffers (call once) */
+async function loadAll(): Promise<void> {
+  if (loaded) return;
+  if (loadingPromise) return loadingPromise;
+
+  loadingPromise = (async () => {
+    ensureCtx();
+    await Promise.all(
+      Object.entries(SOUNDS).map(([key, url]) => loadBuffer(key, url)),
+    );
+    loaded = true;
+  })();
+
+  return loadingPromise;
+}
+
+/* ================================================================== */
+/*  Core playback — instant from pre-decoded buffer                    */
+/* ================================================================== */
+
+function playBuf(
+  key: string,
   volume = 1.0,
   opts?: { loop?: boolean; maxDuration?: number },
-): HTMLAudioElement | null {
-  if (isMuted) return null;
+): AudioBufferSourceNode | null {
+  if (isMuted || !ctx || !masterGain || !buffers[key]) return null;
+  if (ctx.state === "suspended") ctx.resume().catch(() => {});
 
-  const audio = new Audio(SOUNDS[key]);
-  audio.volume = Math.min(1, volume * masterVolume);
-  audio.loop = opts?.loop ?? false;
+  const source = ctx.createBufferSource();
+  const gain = ctx.createGain();
 
-  audio.play().catch(() => {
-    /* autoplay blocked — will work after user interaction */
-  });
+  source.buffer = buffers[key];
+  source.loop = opts?.loop ?? false;
+  gain.gain.value = Math.min(1, volume * masterVolume);
 
-  // Auto-cleanup when finished
-  if (!opts?.loop) {
-    audio.addEventListener("ended", () => { audio.src = ""; });
+  source.connect(gain);
+  gain.connect(masterGain);
+  source.start(0);
+
+  // Optional max duration cutoff — fade out smoothly
+  if (opts?.maxDuration && !opts.loop) {
+    const fadeStart = opts.maxDuration / 1000;
+    const fadeEnd = fadeStart + 0.3;
+    gain.gain.setValueAtTime(gain.gain.value, ctx.currentTime + fadeStart);
+    gain.gain.linearRampToValueAtTime(0, ctx.currentTime + fadeEnd);
+    source.stop(ctx.currentTime + fadeEnd + 0.05);
   }
 
-  // Optional max duration cutoff
-  if (opts?.maxDuration) {
-    setTimeout(() => {
-      if (!audio.paused) {
-        audio.pause();
-        audio.src = "";
-      }
-    }, opts.maxDuration);
-  }
-
-  return audio;
+  return source;
 }
 
 /* ================================================================== */
-/*  Public API — Mute / Volume                                         */
+/*  Public API — Init / Mute / Volume                                  */
 /* ================================================================== */
+
+/**
+ * Call on first user gesture (click/touch) to unlock AudioContext
+ * and begin loading all sound files. Safe to call multiple times.
+ */
+export async function initSounds(): Promise<void> {
+  ensureCtx();
+  await loadAll();
+}
 
 export function toggleMute(): boolean {
   isMuted = !isMuted;
-  if (ambientAudio) {
-    ambientAudio.volume = isMuted ? 0 : masterVolume * 0.3;
+  if (masterGain) {
+    masterGain.gain.value = isMuted ? 0 : masterVolume;
   }
   return isMuted;
 }
@@ -90,91 +140,77 @@ export function getIsMuted(): boolean {
 /*  Event Sounds                                                       */
 /* ================================================================== */
 
-/** Stadium eruption — crowd going wild on goal */
 export function playGoalSound() {
-  play("goal", 1.0);
+  playBuf("goal", 1.0);
 }
 
-/** Crowd booing / disappointment on missed shot */
 export function playMissSound() {
-  play("boo", 0.8, { maxDuration: 4000 });
+  playBuf("boo", 0.8, { maxDuration: 4000 });
 }
 
-/** Crowd gasp on goalkeeper save */
 export function playSaveSound() {
-  play("gasp", 0.9);
+  playBuf("gasp", 0.9);
 }
 
-/** Referee whistle — short burst or full triple-blast */
 export function playWhistleSound(short = false) {
-  play("whistle", 0.7, short ? { maxDuration: 800 } : undefined);
+  playBuf("whistle", 0.7, short ? { maxDuration: 800 } : undefined);
 }
 
-/** Whistle + crowd shocked reaction for cards */
 export function playCardSound() {
-  play("whistle", 0.6, { maxDuration: 800 });
-  setTimeout(() => play("shocked", 0.8), 300);
+  playBuf("whistle", 0.6, { maxDuration: 800 });
+  setTimeout(() => playBuf("shocked", 0.8), 300);
 }
 
-/** Quick crowd shock for tackles / fouls */
 export function playTackleSound() {
-  play("shocked", 0.5);
+  playBuf("shocked", 0.5);
 }
 
-/** Victory celebration — crowd cheering & clapping */
 export function playVictorySound() {
-  play("victory", 1.0, { maxDuration: 8000 });
+  playBuf("victory", 1.0, { maxDuration: 8000 });
 }
 
-/** Muted disappointed crowd for defeat */
 export function playDefeatSound() {
-  play("boo", 0.6, { maxDuration: 5000 });
+  playBuf("boo", 0.6, { maxDuration: 5000 });
 }
 
-/** Casino coin jingle for SOL payout (synthesized — musical UI sound) */
 export function playCoinSound() {
-  if (isMuted) return;
-  try {
-    const ctx = new AudioContext();
-    const master = ctx.createGain();
-    master.gain.value = masterVolume * 0.5;
-    master.connect(ctx.destination);
-    const now = ctx.currentTime;
+  if (isMuted || !ctx || !masterGain) return;
+  const c = ctx;
+  const m = masterGain;
+  const now = c.currentTime;
 
-    const notes = [
-      { f: 1318.5, t: 0 },
-      { f: 1568, t: 0.08 },
-      { f: 2093, t: 0.16 },
-      { f: 2637, t: 0.24 },
-      { f: 2093, t: 0.36 },
-      { f: 2637, t: 0.44 },
-      { f: 3135.9, t: 0.52 },
-      { f: 3951, t: 0.64 },
-    ];
+  const notes = [
+    { f: 1318.5, t: 0 },
+    { f: 1568, t: 0.08 },
+    { f: 2093, t: 0.16 },
+    { f: 2637, t: 0.24 },
+    { f: 2093, t: 0.36 },
+    { f: 2637, t: 0.44 },
+    { f: 3135.9, t: 0.52 },
+    { f: 3951, t: 0.64 },
+  ];
 
-    notes.forEach(({ f, t }) => {
-      const osc = ctx.createOscillator();
-      const g = ctx.createGain();
-      osc.type = "square";
-      osc.frequency.value = f;
-      g.gain.setValueAtTime(0, now + t);
-      g.gain.linearRampToValueAtTime(0.06, now + t + 0.015);
-      g.gain.exponentialRampToValueAtTime(0.001, now + t + 0.2);
-      osc.connect(g);
-      g.connect(master);
-      osc.start(now + t);
-      osc.stop(now + t + 0.25);
-    });
+  const coinGain = c.createGain();
+  coinGain.gain.value = 0.5;
+  coinGain.connect(m);
 
-    setTimeout(() => ctx.close().catch(() => {}), 2000);
-  } catch {
-    /* Web Audio not available */
-  }
+  notes.forEach(({ f, t }) => {
+    const osc = c.createOscillator();
+    const g = c.createGain();
+    osc.type = "square";
+    osc.frequency.value = f;
+    g.gain.setValueAtTime(0, now + t);
+    g.gain.linearRampToValueAtTime(0.06, now + t + 0.015);
+    g.gain.exponentialRampToValueAtTime(0.001, now + t + 0.2);
+    osc.connect(g);
+    g.connect(coinGain);
+    osc.start(now + t);
+    osc.stop(now + t + 0.25);
+  });
 }
 
-/** Short stadium chant burst for buildup plays */
 export function playChantPulse() {
-  play("chant", 0.4, { maxDuration: 3000 });
+  playBuf("chant", 0.4, { maxDuration: 3000 });
 }
 
 /* ================================================================== */
@@ -182,30 +218,36 @@ export function playChantPulse() {
 /* ================================================================== */
 
 export function startCrowdAmbient() {
-  if (ambientAudio) return;
+  if (ambientSource) return;
+  if (!ctx || !masterGain || !buffers.ambient) return;
 
-  preloadAll();
+  ambientGain = ctx.createGain();
+  ambientGain.gain.value = 0.25;
+  ambientGain.connect(masterGain);
 
-  ambientAudio = new Audio(SOUNDS.ambient);
-  ambientAudio.loop = true;
-  ambientAudio.volume = isMuted ? 0 : masterVolume * 0.3;
-  ambientAudio.play().catch(() => {});
+  ambientSource = ctx.createBufferSource();
+  ambientSource.buffer = buffers.ambient;
+  ambientSource.loop = true;
+  ambientSource.connect(ambientGain);
+  ambientSource.start(0);
 }
 
-/** Scale ambient crowd volume by match intensity (0 = calm, 1 = intense) */
 export function setCrowdIntensity(level: number) {
-  if (ambientAudio && !isMuted) {
-    // Range: 0.15 (quiet) → 0.60 (roaring)
-    ambientAudio.volume = Math.min(1, masterVolume * (0.15 + Math.max(0, Math.min(1, level)) * 0.45));
-  }
+  if (!ambientGain || !ctx) return;
+  const clamped = Math.max(0, Math.min(1, level));
+  // Range: 0.12 (quiet) → 0.55 (roaring)
+  const target = 0.12 + clamped * 0.43;
+  ambientGain.gain.linearRampToValueAtTime(target, ctx.currentTime + 0.3);
 }
 
 export function stopCrowdAmbient() {
-  if (ambientAudio) {
-    ambientAudio.pause();
-    ambientAudio.src = "";
-    ambientAudio = null;
+  try {
+    ambientSource?.stop();
+  } catch {
+    /* already stopped */
   }
+  ambientSource = null;
+  ambientGain = null;
 }
 
 /* ================================================================== */
@@ -242,7 +284,6 @@ export function playSoundForEvent(eventType: string) {
       break;
     case "pass":
     case "dribble":
-      // Occasional chant for buildup plays (30% chance)
       if (Math.random() > 0.7) playChantPulse();
       break;
   }

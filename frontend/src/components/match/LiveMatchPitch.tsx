@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import {
+  initSounds,
   playSoundForEvent,
   startCrowdAmbient,
   stopCrowdAmbient,
@@ -225,11 +226,13 @@ export default function LiveMatchPitch({
   const particleFrame = useRef<number>(0);
   const intensityDecay = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Start crowd ambient on first interaction
+  // Load all sounds + start ambient on first interaction
   const initSound = useCallback(() => {
     if (!soundStarted) {
-      startCrowdAmbient();
       setSoundStarted(true);
+      initSounds().then(() => {
+        startCrowdAmbient();
+      });
     }
   }, [soundStarted]);
 
@@ -301,10 +304,13 @@ export default function LiveMatchPitch({
     const newEvents = events.slice(lastEventCount.current);
     lastEventCount.current = events.length;
 
+    // Prioritise goals above all other events — never miss a goal sound
+    const goalEvent = newEvents.find((e) => e.type === "goal");
     const significant =
+      goalEvent ||
       newEvents.find((e) =>
         [
-          "goal", "shot_saved", "shot_missed", "tackle", "pass",
+          "shot_saved", "shot_missed", "tackle", "pass",
           "red_card", "yellow_card", "injury", "half_time", "foul",
           "dribble", "possession_change",
         ].includes(e.type)
@@ -315,7 +321,14 @@ export default function LiveMatchPitch({
     // Init sound on first event
     initSound();
 
-    // Play sound
+    // Play sound for every new event (not just the significant one)
+    // This ensures goal sounds ALWAYS fire, even in event batches
+    newEvents.forEach((e) => {
+      if (e === significant) return; // played below
+      if (["goal", "shot_saved", "shot_missed", "yellow_card", "red_card", "half_time", "full_time"].includes(e.type)) {
+        playSoundForEvent(e.type);
+      }
+    });
     playSoundForEvent(significant.type);
 
     // Move ball
