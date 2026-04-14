@@ -178,7 +178,7 @@ function getBallTarget(event: MatchEvent): { x: number; y: number } {
 }
 
 const FLASH_EVENTS: Record<string, { text: string; color: string; duration: number; emoji?: string }> = {
-  goal:        { text: "GOOOL!", color: "#FFD700", duration: 3500, emoji: "⚽" },
+  goal:        { text: "GOAL!", color: "#FFD700", duration: 3500, emoji: "⚽" },
   shot_saved:  { text: "SAVE!",  color: "#00AEEF", duration: 1800, emoji: "🧤" },
   shot_missed: { text: "MISS!",  color: "#888",    duration: 1200 },
   red_card:    { text: "RED CARD!", color: "#FF3B3B", duration: 2500, emoji: "🟥" },
