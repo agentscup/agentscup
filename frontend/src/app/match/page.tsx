@@ -318,17 +318,13 @@ export default function MatchPage() {
   const playableAgents = useMemo(() => ownedAgents.filter(a => a.position !== "MGR"), [ownedAgents]);
   const managers = useMemo(() => ownedAgents.filter(a => a.position === "MGR"), [ownedAgents]);
   const slots = FORMATIONS[formation];
-  const assignedIds = new Set(Object.values(positions).filter(Boolean).map(a => a!.id));
-  const assignedCount = Object.values(positions).filter(Boolean).length;
 
-  const selectedSlotData = slots.find(s => s.slot === selectedSlot);
-  const availableAgents = useMemo(() => {
-    if (!selectedSlotData) return [];
-    const compatible = getCompatible(selectedSlotData.position);
-    return playableAgents
-      .filter(a => compatible.includes(a.position) && !assignedIds.has(a.id))
-      .sort((a, b) => b.overall - a.overall);
-  }, [selectedSlotData, assignedIds, playableAgents]);
+  // Stable serialization for memo deps
+  const assignedIdsList = useMemo(() => {
+    return Object.values(positions).filter(Boolean).map(a => a!.id);
+  }, [positions]);
+  const assignedIds = useMemo(() => new Set(assignedIdsList), [assignedIdsList]);
+  const assignedCount = assignedIdsList.length;
 
   function getCompatible(slotPos: Position): Position[] {
     if (slotPos === "GK") return ["GK"];
@@ -343,6 +339,38 @@ export default function MatchPage() {
     if (slotPos === "ST") return ["ST", "LW", "RW"];
     return [slotPos];
   }
+
+  const selectedSlotData = slots.find(s => s.slot === selectedSlot);
+  const availableAgents = useMemo(() => {
+    if (!selectedSlotData) return [];
+    const compatible = getCompatible(selectedSlotData.position);
+    return playableAgents
+      .filter(a => compatible.includes(a.position) && !assignedIds.has(a.id))
+      .sort((a, b) => b.overall - a.overall);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedSlotData?.slot, assignedIdsList, playableAgents]);
+
+  // Auto-assign agent to first empty compatible slot (when no slot selected)
+  const autoAssignAgent = useCallback((agent: Agent) => {
+    for (const slot of slots) {
+      // Skip filled slots
+      if (positions[slot.slot]) continue;
+      // Check compatibility
+      const compatible = getCompatible(slot.position);
+      if (compatible.includes(agent.position as Position)) {
+        setPositions(prev => ({ ...prev, [slot.slot]: agent }));
+        return;
+      }
+    }
+    // No empty compatible slot found — select the first compatible slot (replace)
+    for (const slot of slots) {
+      const compatible = getCompatible(slot.position);
+      if (compatible.includes(agent.position as Position)) {
+        setSelectedSlot(slot.slot);
+        return;
+      }
+    }
+  }, [slots, positions]);
 
   // Auto-fill squad from best available agents
   const autoFillSquad = useCallback(() => {
@@ -619,7 +647,18 @@ export default function MatchPage() {
                     return (
                       <button
                         key={slot.slot}
-                        onClick={() => setSelectedSlot(isSelected ? null : slot.slot)}
+                        onClick={() => {
+                          if (isSelected && !agent) {
+                            // Don't toggle off empty slot — keep it selected so user can pick agent
+                            return;
+                          }
+                          if (isSelected && agent) {
+                            // Clicking a filled slot toggles it off (to allow removal)
+                            setSelectedSlot(null);
+                          } else {
+                            setSelectedSlot(slot.slot);
+                          }
+                        }}
                         className="absolute -translate-x-1/2 -translate-y-1/2 transition-all"
                         style={{ left: `${slot.x}%`, top: `${slot.y}%` }}
                       >
@@ -746,9 +785,12 @@ export default function MatchPage() {
                   </>
                 ) : (
                   <>
-                    <h3 className="font-pixel text-[7px] text-white mb-3 tracking-wider">
+                    <h3 className="font-pixel text-[7px] text-white mb-2 tracking-wider">
                       YOUR AGENTS ({playableAgents.filter(a => !assignedIds.has(a.id)).length})
                     </h3>
+                    <p className="font-pixel text-[5px] text-white/25 tracking-wider mb-3">
+                      TAP AN AGENT TO AUTO-PLACE OR SELECT A SLOT FIRST
+                    </p>
                     {playableAgents.filter(a => !assignedIds.has(a.id)).length === 0 ? (
                       <p className="font-pixel text-[7px] text-white/30 tracking-wider">ALL AGENTS ASSIGNED</p>
                     ) : (
@@ -758,7 +800,7 @@ export default function MatchPage() {
                           .sort((a, b) => b.overall - a.overall)
                           .slice(0, 30)
                           .map(agent => (
-                            <div key={agent.id}>
+                            <div key={agent.id} className="cursor-pointer" onClick={() => autoAssignAgent(agent)}>
                               <AgentCard agent={agent} size="sm" />
                             </div>
                           ))}
