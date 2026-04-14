@@ -8,6 +8,12 @@ import {
   LAMPORTS_PER_SOL,
   sendAndConfirmTransaction,
 } from "@solana/web3.js";
+import {
+  getAssociatedTokenAddress,
+  createTransferInstruction,
+  getAccount,
+  createAssociatedTokenAccountInstruction,
+} from "@solana/spl-token";
 import dotenv from "dotenv";
 dotenv.config();
 
@@ -137,7 +143,130 @@ export async function getBalance(walletAddress: string): Promise<number> {
 /*  Match Entry Fee System                                             */
 /* ================================================================== */
 
-export const MATCH_ENTRY_FEE_SOL = 0.05;
+export const MATCH_ENTRY_FEE_SOL = 0.01;
+
+/* ================================================================== */
+/*  $CUP Token Staking                                                 */
+/* ================================================================== */
+
+export const TOKEN_MINT = new PublicKey(
+  process.env.TOKEN_MINT || "FjZvB6k9jCWDBUsgXRxJUByrqWHADQJigXK233b5pump"
+);
+export const TOKEN_DECIMALS = 6;
+export const STAKE_THRESHOLD = 5_000_000; // 5M tokens needed to play free
+
+/** Convert token amount to raw units */
+export function tokenToRaw(amount: number): bigint {
+  return BigInt(amount) * BigInt(10 ** TOKEN_DECIMALS);
+}
+
+/**
+ * Verify a token stake transaction on-chain.
+ * Checks that the user transferred >= STAKE_THRESHOLD tokens to treasury.
+ */
+export async function verifyTokenStakeTransaction(
+  txSignature: string,
+  payerWallet: string
+): Promise<{ valid: boolean; error?: string }> {
+  try {
+    const tx = await connection.getTransaction(txSignature, {
+      commitment: "confirmed",
+      maxSupportedTransactionVersion: 0,
+    });
+    if (!tx) return { valid: false, error: "Transaction not found" };
+    if (tx.meta?.err) return { valid: false, error: "Transaction failed on-chain" };
+
+    const accountKeys = tx.transaction.message.getAccountKeys();
+    const payerKey = accountKeys.get(0);
+    if (!payerKey || payerKey.toBase58() !== payerWallet) {
+      return { valid: false, error: "Payer mismatch" };
+    }
+
+    const preTokenBalances = tx.meta?.preTokenBalances || [];
+    const postTokenBalances = tx.meta?.postTokenBalances || [];
+    const treasuryAddress = TREASURY_WALLET.toBase58();
+    const mintAddress = TOKEN_MINT.toBase58();
+    const expectedRaw = tokenToRaw(STAKE_THRESHOLD);
+
+    let treasuryReceived = BigInt(0);
+    for (const post of postTokenBalances) {
+      if (post.mint === mintAddress && post.owner === treasuryAddress) {
+        const postAmount = BigInt(post.uiTokenAmount.amount);
+        const pre = preTokenBalances.find(
+          (p) => p.accountIndex === post.accountIndex && p.mint === mintAddress
+        );
+        const preAmount = pre ? BigInt(pre.uiTokenAmount.amount) : BigInt(0);
+        treasuryReceived = postAmount - preAmount;
+        break;
+      }
+    }
+
+    if (treasuryReceived < expectedRaw) {
+      return {
+        valid: false,
+        error: `Treasury received ${treasuryReceived} raw tokens, expected ${expectedRaw}`,
+      };
+    }
+
+    console.log(
+      `[STAKE] Verified: payer=${payerWallet.slice(0, 8)} amount=${treasuryReceived} tx=${txSignature.slice(0, 12)}`
+    );
+    return { valid: true };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    return { valid: false, error: message };
+  }
+}
+
+/**
+ * Send SPL tokens from treasury to a wallet (for unstaking).
+ */
+export async function sendTokenPayout(
+  recipientWallet: string,
+  tokenAmount: number
+): Promise<{ success: boolean; signature?: string; error?: string }> {
+  try {
+    const treasury = getTreasuryKeypair();
+    const recipient = new PublicKey(recipientWallet);
+    const rawAmount = tokenToRaw(tokenAmount);
+
+    const treasuryAta = await getAssociatedTokenAddress(TOKEN_MINT, treasury.publicKey);
+    const recipientAta = await getAssociatedTokenAddress(TOKEN_MINT, recipient);
+
+    const treasuryTokenAccount = await getAccount(connection, treasuryAta);
+    if (treasuryTokenAccount.amount < rawAmount) {
+      return { success: false, error: `Insufficient treasury token balance` };
+    }
+
+    const tx = new Transaction();
+
+    // Create recipient ATA if needed
+    try {
+      await getAccount(connection, recipientAta);
+    } catch {
+      tx.add(
+        createAssociatedTokenAccountInstruction(
+          treasury.publicKey, recipientAta, recipient, TOKEN_MINT
+        )
+      );
+    }
+
+    tx.add(
+      createTransferInstruction(treasuryAta, recipientAta, treasury.publicKey, rawAmount)
+    );
+
+    const signature = await sendAndConfirmTransaction(connection, tx, [treasury], {
+      commitment: "confirmed",
+    });
+
+    console.log(`[TOKEN PAYOUT] Sent ${tokenAmount} tokens to ${recipientWallet.slice(0, 8)} tx=${signature.slice(0, 12)}`);
+    return { success: true, signature };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    console.error(`[TOKEN PAYOUT ERROR] ${recipientWallet.slice(0, 8)}: ${message}`);
+    return { success: false, error: message };
+  }
+}
 
 /** Get treasury keypair for signing outgoing transactions */
 function getTreasuryKeypair(): Keypair {

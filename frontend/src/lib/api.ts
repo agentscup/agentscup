@@ -205,6 +205,29 @@ export async function cancelListing(
   });
 }
 
+// ─── Staking ────────────────────────────────────────────────────────
+export async function getStakeInfo(wallet: string): Promise<{
+  isStaker: boolean;
+  stake: { amount: number; stakedAt: string; txSignature: string } | null;
+  threshold: number;
+}> {
+  return request(`/staking/${wallet}`);
+}
+
+export async function stakeTokens(wallet: string, txSignature: string) {
+  return request("/staking/stake", {
+    method: "POST",
+    body: JSON.stringify({ wallet, txSignature }),
+  });
+}
+
+export async function unstakeTokens(wallet: string) {
+  return request("/staking/unstake", {
+    method: "POST",
+    body: JSON.stringify({ wallet }),
+  });
+}
+
 // ─── Leaderboard ────────────────────────────────────────────────────
 export async function getLeaderboard() {
   return request("/leaderboard");

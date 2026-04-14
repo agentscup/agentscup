@@ -3,6 +3,7 @@ import { supabase } from "../lib/supabase";
 import { simulateMatch, SquadInput, PlayerInput, MatchEvent, MatchResult } from "../engine/matchEngine";
 import { calculateElo } from "../services/eloService";
 import { verifyEntryFeeTransaction, sendPayout, MATCH_ENTRY_FEE_SOL } from "../lib/solana";
+import { hasActiveStake } from "../services/stakeService";
 
 /* ================================================================== */
 /*  Online PvP Matchmaking + Real-time Match Streaming                 */
@@ -15,7 +16,8 @@ interface QueueEntry {
   teamName: string;
   userId: string;
   joinedAt: number;
-  txSignature: string;
+  txSignature: string;  // empty string for stakers
+  isStaker: boolean;    // staked 5M $CUP → free entry
 }
 
 interface ActiveMatch {
@@ -35,6 +37,8 @@ interface ActiveMatch {
   currentMinute: number;
   maxMinute: number;
   interval?: ReturnType<typeof setInterval>;
+  homeIsStaker: boolean;
+  awayIsStaker: boolean;
 }
 
 // In-memory state
@@ -55,18 +59,13 @@ export function setupMatchSocket(io: Server) {
       formation: string;
       positions: Record<string, string>; // slot → agentId
       managerId?: string;
-      txSignature: string;
+      txSignature?: string;
+      useStake?: boolean;
     }) => {
       try {
-        const { wallet, formation, positions, managerId, txSignature } = data;
+        const { wallet, formation, positions, managerId, txSignature, useStake } = data;
         if (!wallet || !formation || !positions) {
           socket.emit("queue_error", { message: "Missing wallet, formation, or positions" });
-          return;
-        }
-
-        // Entry fee TX required
-        if (!txSignature) {
-          socket.emit("queue_error", { message: "Entry fee payment required" });
           return;
         }
 
@@ -80,23 +79,39 @@ export function setupMatchSocket(io: Server) {
           return;
         }
 
-        // Prevent TX reuse
-        if (usedTxSignatures.has(txSignature)) {
-          socket.emit("queue_error", { message: "Transaction already used" });
-          return;
-        }
+        let isStaker = false;
 
-        // Verify entry fee on-chain
-        console.log(`[MATCH] Verifying entry fee for ${wallet.slice(0, 8)} tx=${txSignature.slice(0, 12)}`);
-        const verification = await verifyEntryFeeTransaction(txSignature, wallet);
-        if (!verification.valid) {
-          console.log(`[MATCH] Entry fee verification failed: ${verification.error}`);
-          socket.emit("queue_error", { message: `Payment verification failed: ${verification.error}` });
-          return;
-        }
+        if (useStake) {
+          // ─── Staker path: verify active stake in DB ───
+          const staked = await hasActiveStake(wallet);
+          if (!staked) {
+            socket.emit("queue_error", { message: "No active stake found. Stake 5M $CUP first." });
+            return;
+          }
+          isStaker = true;
+          console.log(`[MATCH] ${wallet.slice(0, 8)} entering as STAKER (free entry)`);
+        } else {
+          // ─── Normal SOL path ───
+          if (!txSignature) {
+            socket.emit("queue_error", { message: "Entry fee payment required" });
+            return;
+          }
 
-        // Mark TX as used (permanently — even after refund)
-        usedTxSignatures.add(txSignature);
+          if (usedTxSignatures.has(txSignature)) {
+            socket.emit("queue_error", { message: "Transaction already used" });
+            return;
+          }
+
+          console.log(`[MATCH] Verifying entry fee for ${wallet.slice(0, 8)} tx=${txSignature.slice(0, 12)}`);
+          const verification = await verifyEntryFeeTransaction(txSignature, wallet);
+          if (!verification.valid) {
+            console.log(`[MATCH] Entry fee verification failed: ${verification.error}`);
+            socket.emit("queue_error", { message: `Payment verification failed: ${verification.error}` });
+            return;
+          }
+
+          usedTxSignatures.add(txSignature);
+        }
 
         // Track socket ↔ wallet mapping
         walletToSocket.set(wallet, socket.id);
@@ -111,8 +126,9 @@ export function setupMatchSocket(io: Server) {
 
         if (!user) {
           socket.emit("queue_error", { message: "User not found. Connect your wallet first." });
-          // Refund since we already marked TX as used
-          sendPayout(wallet, MATCH_ENTRY_FEE_SOL).catch(e => console.error("[MATCH] Refund failed:", e));
+          if (!isStaker && txSignature) {
+            sendPayout(wallet, MATCH_ENTRY_FEE_SOL).catch(e => console.error("[MATCH] Refund failed:", e));
+          }
           return;
         }
 
@@ -120,7 +136,9 @@ export function setupMatchSocket(io: Server) {
         const squad = await buildVerifiedSquad(wallet, user.id, formation, positions, managerId);
         if (!squad) {
           socket.emit("queue_error", { message: "Invalid squad. Make sure you own all agents." });
-          sendPayout(wallet, MATCH_ENTRY_FEE_SOL).catch(e => console.error("[MATCH] Refund failed:", e));
+          if (!isStaker && txSignature) {
+            sendPayout(wallet, MATCH_ENTRY_FEE_SOL).catch(e => console.error("[MATCH] Refund failed:", e));
+          }
           return;
         }
 
@@ -138,12 +156,14 @@ export function setupMatchSocket(io: Server) {
           teamName: lb?.team_name || user.username || wallet.slice(0, 8),
           userId: user.id,
           joinedAt: Date.now(),
-          txSignature,
+          txSignature: txSignature || "",
+          isStaker,
         };
 
         matchmakingQueue.set(wallet, entry);
         socket.emit("queue_joined", { position: matchmakingQueue.size });
-        console.log(`[MATCH] ${wallet.slice(0, 8)} joined queue (${matchmakingQueue.size} in queue) [PAID ${MATCH_ENTRY_FEE_SOL} SOL]`);
+        const label = isStaker ? "STAKER (FREE)" : `PAID ${MATCH_ENTRY_FEE_SOL} SOL`;
+        console.log(`[MATCH] ${wallet.slice(0, 8)} joined queue (${matchmakingQueue.size} in queue) [${label}]`);
 
         // Try to find a match
         tryMatchPlayers(io);
@@ -157,13 +177,18 @@ export function setupMatchSocket(io: Server) {
     socket.on("leave_queue", async () => {
       const wallet = socketToWallet.get(socket.id);
       if (wallet && matchmakingQueue.has(wallet)) {
+        const entry = matchmakingQueue.get(wallet)!;
         matchmakingQueue.delete(wallet);
 
-        // Refund entry fee
-        console.log(`[MATCH] ${wallet.slice(0, 8)} left queue — refunding ${MATCH_ENTRY_FEE_SOL} SOL`);
-        const refund = await sendPayout(wallet, MATCH_ENTRY_FEE_SOL);
-        if (!refund.success) {
-          console.error(`[MATCH] REFUND FAILED for ${wallet}: ${refund.error}`);
+        // Refund entry fee (only if they paid SOL, not stakers)
+        if (!entry.isStaker) {
+          console.log(`[MATCH] ${wallet.slice(0, 8)} left queue — refunding ${MATCH_ENTRY_FEE_SOL} SOL`);
+          const refund = await sendPayout(wallet, MATCH_ENTRY_FEE_SOL);
+          if (!refund.success) {
+            console.error(`[MATCH] REFUND FAILED for ${wallet}: ${refund.error}`);
+          }
+        } else {
+          console.log(`[MATCH] ${wallet.slice(0, 8)} (staker) left queue — no refund needed`);
         }
 
         socket.emit("queue_left", {});
@@ -176,11 +201,16 @@ export function setupMatchSocket(io: Server) {
       if (wallet) {
         // Refund if was in queue (not yet matched)
         if (matchmakingQueue.has(wallet)) {
+          const entry = matchmakingQueue.get(wallet)!;
           matchmakingQueue.delete(wallet);
-          console.log(`[MATCH] ${wallet.slice(0, 8)} disconnected from queue — refunding`);
-          const refund = await sendPayout(wallet, MATCH_ENTRY_FEE_SOL);
-          if (!refund.success) {
-            console.error(`[MATCH] DISCONNECT REFUND FAILED for ${wallet}: ${refund.error}`);
+          if (!entry.isStaker) {
+            console.log(`[MATCH] ${wallet.slice(0, 8)} disconnected from queue — refunding`);
+            const refund = await sendPayout(wallet, MATCH_ENTRY_FEE_SOL);
+            if (!refund.success) {
+              console.error(`[MATCH] DISCONNECT REFUND FAILED for ${wallet}: ${refund.error}`);
+            }
+          } else {
+            console.log(`[MATCH] ${wallet.slice(0, 8)} (staker) disconnected from queue`);
           }
         }
 
@@ -297,6 +327,8 @@ async function startMatch(io: Server, home: QueueEntry, away: QueueEntry) {
     seed,
     currentMinute: 0,
     maxMinute,
+    homeIsStaker: home.isStaker,
+    awayIsStaker: away.isStaker,
   };
 
   activeMatches.set(matchId, match);
@@ -446,32 +478,84 @@ async function finishMatch(io: Server, match: ActiveMatch) {
     }
 
     // ─── Prize Payout ──────────────────────────────────────
+    // Staker logic:
+    //   Staker vs Normal: staker free, normal paid 0.01
+    //     - Staker wins → staker gets 0.01 SOL (from opponent entry)
+    //     - Staker loses → treasury pays 0.01 SOL to winner (normal player)
+    //     - Draw → normal player gets refund, staker gets nothing
+    //   Staker vs Staker: no SOL moves at all
+    //   Normal vs Normal: standard 0.01+0.01 → winner gets 0.02
     const isDraw = result.homeScore === result.awayScore;
     const homeWon = result.homeScore > result.awayScore;
-    const prizePot = MATCH_ENTRY_FEE_SOL * 2;
+    const bothStakers = match.homeIsStaker && match.awayIsStaker;
+    const bothNormal = !match.homeIsStaker && !match.awayIsStaker;
     let payoutTx: string | undefined;
+    let homePrizeSol = 0;
+    let awayPrizeSol = 0;
 
-    if (isDraw) {
-      console.log(`[MATCH] Draw — refunding both players ${MATCH_ENTRY_FEE_SOL} SOL each`);
-      const [homeRefund, awayRefund] = await Promise.allSettled([
-        sendPayout(match.homeWallet, MATCH_ENTRY_FEE_SOL),
-        sendPayout(match.awayWallet, MATCH_ENTRY_FEE_SOL),
-      ]);
-      if (homeRefund.status === "fulfilled" && !homeRefund.value.success) {
-        console.error(`[MATCH] HOME REFUND FAILED: ${homeRefund.value.error}`);
-      }
-      if (awayRefund.status === "fulfilled" && !awayRefund.value.success) {
-        console.error(`[MATCH] AWAY REFUND FAILED: ${awayRefund.value.error}`);
+    if (bothStakers) {
+      // ─── Staker vs Staker: no SOL movement ───
+      console.log(`[MATCH] Staker vs Staker — no SOL movement`);
+    } else if (bothNormal) {
+      // ─── Normal vs Normal: standard payout ───
+      const prizePot = MATCH_ENTRY_FEE_SOL * 2;
+      if (isDraw) {
+        console.log(`[MATCH] Draw — refunding both players ${MATCH_ENTRY_FEE_SOL} SOL each`);
+        const [homeRefund, awayRefund] = await Promise.allSettled([
+          sendPayout(match.homeWallet, MATCH_ENTRY_FEE_SOL),
+          sendPayout(match.awayWallet, MATCH_ENTRY_FEE_SOL),
+        ]);
+        if (homeRefund.status === "fulfilled" && !homeRefund.value.success) {
+          console.error(`[MATCH] HOME REFUND FAILED: ${homeRefund.value.error}`);
+        }
+        if (awayRefund.status === "fulfilled" && !awayRefund.value.success) {
+          console.error(`[MATCH] AWAY REFUND FAILED: ${awayRefund.value.error}`);
+        }
+      } else {
+        const winnerWallet = homeWon ? match.homeWallet : match.awayWallet;
+        console.log(`[MATCH] Paying winner ${winnerWallet.slice(0, 8)} → ${prizePot} SOL`);
+        const payout = await sendPayout(winnerWallet, prizePot);
+        if (payout.success) {
+          payoutTx = payout.signature;
+          if (homeWon) homePrizeSol = prizePot; else awayPrizeSol = prizePot;
+        } else {
+          console.error(`[MATCH] PAYOUT FAILED for ${winnerWallet}: ${payout.error}`);
+        }
       }
     } else {
-      const winnerWallet = homeWon ? match.homeWallet : match.awayWallet;
-      console.log(`[MATCH] Paying winner ${winnerWallet.slice(0, 8)} → ${prizePot} SOL`);
-      const payout = await sendPayout(winnerWallet, prizePot);
-      if (payout.success) {
-        payoutTx = payout.signature;
-        console.log(`[MATCH] Payout confirmed: tx=${payoutTx?.slice(0, 12)}`);
-      } else {
-        console.error(`[MATCH] PAYOUT FAILED for ${winnerWallet}: ${payout.error}`);
+      // ─── Staker vs Normal (mixed) ───
+      const stakerIsHome = match.homeIsStaker;
+      const stakerWallet = stakerIsHome ? match.homeWallet : match.awayWallet;
+      const normalWallet = stakerIsHome ? match.awayWallet : match.homeWallet;
+      const stakerWon = (stakerIsHome && homeWon) || (!stakerIsHome && !homeWon && !isDraw);
+      const normalWon = !stakerWon && !isDraw;
+
+      if (isDraw) {
+        // Draw: refund the normal player, staker had no cost
+        console.log(`[MATCH] Draw (staker vs normal) — refunding normal player ${normalWallet.slice(0, 8)}`);
+        const refund = await sendPayout(normalWallet, MATCH_ENTRY_FEE_SOL);
+        if (!refund.success) console.error(`[MATCH] REFUND FAILED: ${refund.error}`);
+      } else if (stakerWon) {
+        // Staker won: staker gets the normal player's entry fee (already in treasury)
+        console.log(`[MATCH] Staker ${stakerWallet.slice(0, 8)} won — sending ${MATCH_ENTRY_FEE_SOL} SOL from opponent entry`);
+        const payout = await sendPayout(stakerWallet, MATCH_ENTRY_FEE_SOL);
+        if (payout.success) {
+          payoutTx = payout.signature;
+          if (stakerIsHome) homePrizeSol = MATCH_ENTRY_FEE_SOL; else awayPrizeSol = MATCH_ENTRY_FEE_SOL;
+        } else {
+          console.error(`[MATCH] STAKER PAYOUT FAILED: ${payout.error}`);
+        }
+      } else if (normalWon) {
+        // Normal won: normal gets their entry back + treasury pays 0.01 SOL (staker's penalty)
+        const totalPayout = MATCH_ENTRY_FEE_SOL * 2;
+        console.log(`[MATCH] Normal ${normalWallet.slice(0, 8)} won vs staker — sending ${totalPayout} SOL (entry + treasury match)`);
+        const payout = await sendPayout(normalWallet, totalPayout);
+        if (payout.success) {
+          payoutTx = payout.signature;
+          if (!stakerIsHome) homePrizeSol = totalPayout; else awayPrizeSol = totalPayout;
+        } else {
+          console.error(`[MATCH] NORMAL WINNER PAYOUT FAILED: ${payout.error}`);
+        }
       }
     }
 
@@ -481,6 +565,8 @@ async function finishMatch(io: Server, match: ActiveMatch) {
 
     const finishPayload = (side: "home" | "away") => {
       const iWon = (side === "home" && homeWon) || (side === "away" && !homeWon && !isDraw);
+      const myIsStaker = side === "home" ? match.homeIsStaker : match.awayIsStaker;
+      const myPrizeSol = side === "home" ? homePrizeSol : awayPrizeSol;
       return {
         matchId: match.matchId,
         result: {
@@ -496,9 +582,10 @@ async function finishMatch(io: Server, match: ActiveMatch) {
         xpGain: side === "home"
           ? (result.homeScore > result.awayScore ? 30 : result.homeScore === result.awayScore ? 15 : 5)
           : (result.awayScore > result.homeScore ? 30 : result.homeScore === result.awayScore ? 15 : 5),
-        prizeSol: isDraw ? 0 : (iWon ? prizePot : 0),
+        prizeSol: myPrizeSol,
         payoutTx: iWon ? payoutTx : undefined,
-        entryFeeSol: MATCH_ENTRY_FEE_SOL,
+        entryFeeSol: myIsStaker ? 0 : MATCH_ENTRY_FEE_SOL,
+        isStaker: myIsStaker,
       };
     };
 

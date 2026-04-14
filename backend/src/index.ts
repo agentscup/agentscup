@@ -10,6 +10,7 @@ import squadRoutes from "./routes/squads";
 import matchRoutes from "./routes/matches";
 import marketplaceRoutes from "./routes/marketplace";
 import leaderboardRoutes from "./routes/leaderboard";
+import stakingRoutes from "./routes/staking";
 import { setupMatchSocket } from "./socket/matchSocket";
 import { generalLimiter } from "./middleware/rateLimiter";
 
@@ -37,51 +38,6 @@ app.get("/health", (_, res) =>
   res.json({ status: "ok", timestamp: new Date().toISOString() })
 );
 
-// Treasury diagnostic (temporary — remove after debugging)
-app.get("/debug/treasury", async (_, res) => {
-  try {
-    const { Connection, PublicKey, Keypair } = await import("@solana/web3.js");
-    const treasuryWalletEnv = process.env.TREASURY_WALLET || "NOT SET";
-    const hasPrivateKey = !!process.env.TREASURY_PRIVATE_KEY;
-    let derivedAddress = "N/A";
-    let keyLength = 0;
-    let parseError = "";
-
-    if (hasPrivateKey) {
-      try {
-        const raw = process.env.TREASURY_PRIVATE_KEY!;
-        const parsed = JSON.parse(raw);
-        keyLength = parsed.length;
-        const kp = Keypair.fromSecretKey(Uint8Array.from(parsed));
-        derivedAddress = kp.publicKey.toBase58();
-      } catch (e: any) {
-        parseError = e.message;
-      }
-    }
-
-    const rpc = process.env.SOLANA_RPC_URL || "not set";
-    let balance = -1;
-    try {
-      const conn = new Connection(rpc, "confirmed");
-      balance = await conn.getBalance(new PublicKey(treasuryWalletEnv));
-    } catch {}
-
-    res.json({
-      treasuryWallet: treasuryWalletEnv,
-      hasPrivateKey,
-      keyLength,
-      derivedAddress,
-      match: derivedAddress === treasuryWalletEnv,
-      parseError: parseError || undefined,
-      balanceLamports: balance,
-      balanceSol: balance / 1e9,
-      rpcConfigured: !!process.env.SOLANA_RPC_URL,
-    });
-  } catch (e: any) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
 // Routes
 app.use("/api/users", userRoutes);
 app.use("/api/agents", agentRoutes);
@@ -90,6 +46,7 @@ app.use("/api/squads", squadRoutes);
 app.use("/api/matches", matchRoutes);
 app.use("/api/marketplace", marketplaceRoutes);
 app.use("/api/leaderboard", leaderboardRoutes);
+app.use("/api/staking", stakingRoutes);
 
 // Socket.io for real-time matches
 setupMatchSocket(io);
