@@ -35,27 +35,33 @@ function isCompatible(agentPos: string, slotPos: string): boolean {
 
 function getEventIcon(type: string): string {
   switch (type) {
-    case "goal": return "[GOL]";
-    case "shot_saved": return "[SAV]";
-    case "shot_missed": return "[MIS]";
-    case "yellow_card": return "[YEL]";
-    case "red_card": return "[RED]";
-    case "tackle": return "[TKL]";
-    case "injury": return "[INJ]";
-    case "half_time": case "full_time": case "kick_off": return "[---]";
-    default: return "[...]";
+    case "goal": return "⚽";
+    case "shot_saved": return "🧤";
+    case "shot_missed": return "💨";
+    case "yellow_card": return "🟨";
+    case "red_card": return "🟥";
+    case "tackle": return "💪";
+    case "foul": return "⚠️";
+    case "dribble": return "🏃";
+    case "injury": return "🏥";
+    case "possession_change": return "🔄";
+    case "half_time": case "full_time": case "kick_off": return "📣";
+    default: return "•";
   }
 }
 
 function getEventColor(type: string): string {
   switch (type) {
-    case "goal": return "#1E8F4E";
+    case "goal": return "#FFD700";
     case "shot_saved": return "#00E5FF";
-    case "shot_missed": return "#555";
+    case "shot_missed": return "#666";
     case "yellow_card": return "#eab308";
     case "red_card": return "#ef4444";
     case "tackle": return "#1E8F4E";
+    case "foul": return "#f59e0b";
+    case "dribble": return "#8B5CF6";
     case "injury": return "#f97316";
+    case "possession_change": return "#555";
     case "half_time": case "full_time": case "kick_off": return "#ffffff";
     default: return "#444";
   }
