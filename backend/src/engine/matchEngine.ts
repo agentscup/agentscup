@@ -103,7 +103,7 @@ function pickRandom<T>(arr: T[], rng: () => number): T {
  * statRoll(60, rng) → range [27, 60]    (floor 45%)
  */
 function statRoll(stat: number, rng: () => number): number {
-  return stat * (0.45 + rng() * 0.55);
+  return stat * (0.35 + rng() * 0.65);
 }
 
 /**
@@ -114,7 +114,7 @@ function statRoll(stat: number, rng: () => number): number {
  */
 function powerEdge(myStr: number, theirStr: number): number {
   const ratio = myStr / Math.max(1, theirStr);
-  return Math.pow(ratio, 1.5);
+  return Math.pow(ratio, 1.3);
 }
 
 const ATTACK_VERBS = ["sprints past", "dribbles around", "beats", "outpaces", "nutmegs", "skips past"];
