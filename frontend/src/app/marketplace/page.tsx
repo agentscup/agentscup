@@ -12,7 +12,7 @@ const AgentCardDetail = dynamic(() => import("@/components/cards/AgentCardDetail
   ssr: false,
 });
 import { getListings, getUser, listAgent, cancelListing, buyAgent, getMarketplaceStats, getTradeHistory, type TradeHistoryRow } from "@/lib/api";
-import { mapUserAgentsFull, MappedUserAgent, DbUserAgent } from "@/lib/mapAgent";
+import { mapUserAgentsFull, mapDbAgent, MappedUserAgent, DbUserAgent, DbAgent } from "@/lib/mapAgent";
 import { createBuyAgentTx, connection } from "@/lib/solana";
 
 /* Pending buy stored in ref so it survives re-renders but not page reloads */
@@ -77,11 +77,25 @@ export default function MarketplacePage() {
   const [sellError, setSellError] = useState<string | null>(null);
   const [sellSuccess, setSellSuccess] = useState<string | null>(null);
 
-  // Fetch listings
+  // Fetch listings — map nested DB agent to frontend Agent (with avatarSvg)
   const fetchListings = useCallback(() => {
     setLoading(true);
     getListings()
-      .then((data) => setListings(data as ListingRow[]))
+      .then((data) => {
+        const rows = (data as ListingRow[]).map((l) => {
+          if (l.user_agents?.agents && !(l.user_agents.agents as Agent).avatarSvg) {
+            return {
+              ...l,
+              user_agents: {
+                ...l.user_agents,
+                agents: mapDbAgent(l.user_agents.agents as unknown as DbAgent),
+              },
+            };
+          }
+          return l;
+        });
+        setListings(rows);
+      })
       .catch(() => setListings([]))
       .finally(() => setLoading(false));
   }, []);
