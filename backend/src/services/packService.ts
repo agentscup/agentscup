@@ -6,19 +6,19 @@ export const PACK_CONFIGS = {
     name: "Starter Pack",
     priceSol: 0.1,
     cardCount: 5,
-    rareGuarantee: 1,
-    epicChance: 0.05,
-    legendaryChance: 0.01,
-    description: "5 cards with 1 guaranteed rare+",
+    rareGuarantee: 0,
+    epicChance: 0.02,
+    legendaryChance: 0.003,
+    description: "5 cards — mostly common, small rare chance",
   },
   pro: {
     name: "Pro Pack",
     priceSol: 0.25,
     cardCount: 8,
-    rareGuarantee: 2,
-    epicChance: 0.1,
-    legendaryChance: 0.03,
-    description: "8 cards with 2 guaranteed rare+",
+    rareGuarantee: 1,
+    epicChance: 0.05,
+    legendaryChance: 0.008,
+    description: "8 cards with 1 guaranteed rare+",
   },
   elite: {
     name: "Elite Pack",
@@ -84,9 +84,14 @@ export async function selectPackCards(
       else rarity = "rare";
     } else {
       const roll = Math.random();
+      // Non-guaranteed slots: halved epic/legendary chance, rare chance scales with pack tier
+      const rareFloor = packType === "starter" ? 0.12
+                      : packType === "pro"     ? 0.18
+                      : packType === "elite"   ? 0.30
+                      : 0.35;
       if (roll < config.legendaryChance * 0.5) rarity = "legendary";
       else if (roll < config.epicChance * 0.5) rarity = "epic";
-      else if (roll < 0.3) rarity = "rare";
+      else if (roll < rareFloor) rarity = "rare";
       else rarity = "common";
     }
 
