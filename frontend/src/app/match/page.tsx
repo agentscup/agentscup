@@ -686,9 +686,9 @@ export default function MatchPage() {
                     <div className="p-2 text-center" style={{ background: "#000", border: "1px solid #0B6623" }}>
                       <div className="font-pixel text-[5px] text-white/40 tracking-wider mb-1">WIN</div>
                       <div className="font-pixel text-[8px] tracking-wider" style={{ color: "#2eb060" }}>
-                        +{MATCH_ENTRY_FEE_CUP.toLocaleString()}
+                        +{(MATCH_ENTRY_FEE_CUP * 2).toLocaleString()}
                       </div>
-                      <div className="font-pixel text-[5px] text-white/30 tracking-wider mt-0.5">NET $CUP</div>
+                      <div className="font-pixel text-[5px] text-white/30 tracking-wider mt-0.5">$CUP PAYOUT</div>
                     </div>
                     <div className="p-2 text-center" style={{ background: "#000", border: "1px solid #333" }}>
                       <div className="font-pixel text-[5px] text-white/40 tracking-wider mb-1">DRAW</div>
@@ -868,11 +868,11 @@ export default function MatchPage() {
                 <div className="font-pixel text-[5px] text-white/30 tracking-wider mt-0.5">$CUP</div>
               </div>
               <div className="p-2 text-center" style={{ background: "#000", border: "1px solid #0B6623" }}>
-                <div className="font-pixel text-[5px] text-white/40 tracking-wider mb-1">WIN TO EARN</div>
+                <div className="font-pixel text-[5px] text-white/40 tracking-wider mb-1">WIN PAYOUT</div>
                 <div className="font-pixel text-[8px] tracking-wider" style={{ color: "#2eb060" }}>
-                  +{MATCH_ENTRY_FEE_CUP.toLocaleString()}
+                  +{(MATCH_ENTRY_FEE_CUP * 2).toLocaleString()}
                 </div>
-                <div className="font-pixel text-[5px] text-white/30 tracking-wider mt-0.5">NET $CUP</div>
+                <div className="font-pixel text-[5px] text-white/30 tracking-wider mt-0.5">$CUP TOTAL</div>
               </div>
               <div className="p-2 text-center" style={{ background: "#000", border: "1px solid #333" }}>
                 <div className="font-pixel text-[5px] text-white/40 tracking-wider mb-1">DRAW</div>
