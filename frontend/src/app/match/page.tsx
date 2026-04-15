@@ -361,22 +361,39 @@ export default function MatchPage() {
     }
   }, [slots, positions]);
 
-  // Auto-fill squad from best available agents
+  // Auto-fill squad from best available agents.
+  // Two-pass approach prevents a flexible slot (e.g. LB which also accepts CB)
+  // from consuming an agent needed by a stricter slot (e.g. CB which only accepts CB).
+  //   Pass 1: fill each slot with an agent whose natural position matches exactly
+  //   Pass 2: fill still-empty slots with any position-compatible fallback
   const autoFillSquad = useCallback(() => {
     const newPositions: Record<string, Agent | null> = {};
     const used = new Set<string>();
 
+    // Pass 1 — exact natural-position matches (strictest first)
     for (const slot of slots) {
-      const compatible = getCompatible(slot.position);
       const best = playableAgents
-        .filter(a => compatible.includes(a.position) && !used.has(a.id))
+        .filter(a => a.position === slot.position && !used.has(a.id))
         .sort((a, b) => b.overall - a.overall)[0];
-
       if (best) {
         newPositions[slot.slot] = best;
         used.add(best.id);
       }
     }
+
+    // Pass 2 — fill remaining slots using compatible fallbacks
+    for (const slot of slots) {
+      if (newPositions[slot.slot]) continue;
+      const compatible = getCompatible(slot.position);
+      const best = playableAgents
+        .filter(a => compatible.includes(a.position) && !used.has(a.id))
+        .sort((a, b) => b.overall - a.overall)[0];
+      if (best) {
+        newPositions[slot.slot] = best;
+        used.add(best.id);
+      }
+    }
+
     setPositions(newPositions);
     setSelectedSlot(null);
   }, [slots, playableAgents]);
