@@ -654,20 +654,62 @@ export default function MatchPage() {
                   boxShadow: "inset -2px -2px 0 #222, inset 2px 2px 0 #444",
                 }}>
                   <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="font-pixel text-[7px] tracking-wider text-white">
-                          $CUP BALANCE
-                        </span>
-                      </div>
-                      <p className="font-pixel text-[5px] text-white/30 tracking-wider">
-                        Pay {MATCH_ENTRY_FEE_CUP.toLocaleString()} $CUP to enter. Winner takes {(MATCH_ENTRY_FEE_CUP * 2).toLocaleString()} $CUP.
-                      </p>
+                    <div className="flex items-center gap-2">
+                      <span className="font-pixel text-[7px] tracking-wider text-white">
+                        $CUP BALANCE
+                      </span>
                     </div>
                     <span className="font-pixel text-[9px] tracking-wider shrink-0" style={{ color: "#FFD700" }}>
                       {tokenBalance.toLocaleString()}
                     </span>
                   </div>
+                </div>
+
+                {/* Match Economics + Duration */}
+                <div className="mt-3 p-3" style={{
+                  background: "linear-gradient(180deg, #1a1200 0%, #0a0800 100%)",
+                  border: "2px solid #FFD700",
+                  boxShadow: "inset -2px -2px 0 #8a6f00, inset 2px 2px 0 #FFF4B0, 4px 4px 0 rgba(0,0,0,0.5)",
+                  imageRendering: "pixelated",
+                }}>
+                  <div className="font-pixel text-[7px] text-[#FFD700] tracking-wider mb-3 text-center" style={{ textShadow: "1px 1px 0 #000" }}>
+                    ⚽ MATCH RULES ⚽
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    <div className="p-2 text-center" style={{ background: "#000", border: "1px solid #3a2d00" }}>
+                      <div className="font-pixel text-[5px] text-white/40 tracking-wider mb-1">ENTRY FEE</div>
+                      <div className="font-pixel text-[8px] tracking-wider" style={{ color: "#FFD700" }}>
+                        {MATCH_ENTRY_FEE_CUP.toLocaleString()}
+                      </div>
+                      <div className="font-pixel text-[5px] text-white/30 tracking-wider mt-0.5">$CUP</div>
+                    </div>
+                    <div className="p-2 text-center" style={{ background: "#000", border: "1px solid #0B6623" }}>
+                      <div className="font-pixel text-[5px] text-white/40 tracking-wider mb-1">WIN</div>
+                      <div className="font-pixel text-[8px] tracking-wider" style={{ color: "#2eb060" }}>
+                        +{MATCH_ENTRY_FEE_CUP.toLocaleString()}
+                      </div>
+                      <div className="font-pixel text-[5px] text-white/30 tracking-wider mt-0.5">NET $CUP</div>
+                    </div>
+                    <div className="p-2 text-center" style={{ background: "#000", border: "1px solid #333" }}>
+                      <div className="font-pixel text-[5px] text-white/40 tracking-wider mb-1">DRAW</div>
+                      <div className="font-pixel text-[8px] tracking-wider text-white/70">
+                        REFUND
+                      </div>
+                      <div className="font-pixel text-[5px] text-white/30 tracking-wider mt-0.5">
+                        {MATCH_ENTRY_FEE_CUP.toLocaleString()} $CUP
+                      </div>
+                    </div>
+                    <div className="p-2 text-center" style={{ background: "#000", border: "1px solid #00AEEF" }}>
+                      <div className="font-pixel text-[5px] text-white/40 tracking-wider mb-1">DURATION</div>
+                      <div className="font-pixel text-[8px] tracking-wider" style={{ color: "#00AEEF" }}>
+                        ~60 SEC
+                      </div>
+                      <div className="font-pixel text-[5px] text-white/30 tracking-wider mt-0.5">90 MIN SIM</div>
+                    </div>
+                  </div>
+                  <p className="font-pixel text-[5px] text-white/40 tracking-wider mt-3 text-center leading-relaxed">
+                    PRIZE POT: {(MATCH_ENTRY_FEE_CUP * 2).toLocaleString()} $CUP · WINNER TAKES ALL · LOSER FORFEITS ENTRY
+                  </p>
                 </div>
 
                 {/* Find Match + Entry Fee */}
@@ -805,6 +847,49 @@ export default function MatchPage() {
             <button onClick={cancelQueue} className="pixel-btn-outline text-[8px] px-6 py-2">
               CANCEL
             </button>
+          </div>
+
+          {/* Match Rules — shown while waiting so the user knows the terms */}
+          <div className="max-w-md mx-auto mt-6 p-3 relative" style={{
+            background: "linear-gradient(180deg, #1a1200 0%, #0a0800 100%)",
+            border: "2px solid #FFD700",
+            boxShadow: "inset -2px -2px 0 #8a6f00, inset 2px 2px 0 #FFF4B0, 4px 4px 0 rgba(0,0,0,0.5)",
+            imageRendering: "pixelated",
+          }}>
+            <div className="font-pixel text-[7px] text-[#FFD700] tracking-wider mb-3 text-center" style={{ textShadow: "1px 1px 0 #000" }}>
+              ⚽ MATCH RULES ⚽
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="p-2 text-center" style={{ background: "#000", border: "1px solid #3a2d00" }}>
+                <div className="font-pixel text-[5px] text-white/40 tracking-wider mb-1">YOU PAID</div>
+                <div className="font-pixel text-[8px] tracking-wider" style={{ color: "#FFD700" }}>
+                  {MATCH_ENTRY_FEE_CUP.toLocaleString()}
+                </div>
+                <div className="font-pixel text-[5px] text-white/30 tracking-wider mt-0.5">$CUP</div>
+              </div>
+              <div className="p-2 text-center" style={{ background: "#000", border: "1px solid #0B6623" }}>
+                <div className="font-pixel text-[5px] text-white/40 tracking-wider mb-1">WIN TO EARN</div>
+                <div className="font-pixel text-[8px] tracking-wider" style={{ color: "#2eb060" }}>
+                  +{MATCH_ENTRY_FEE_CUP.toLocaleString()}
+                </div>
+                <div className="font-pixel text-[5px] text-white/30 tracking-wider mt-0.5">NET $CUP</div>
+              </div>
+              <div className="p-2 text-center" style={{ background: "#000", border: "1px solid #333" }}>
+                <div className="font-pixel text-[5px] text-white/40 tracking-wider mb-1">DRAW</div>
+                <div className="font-pixel text-[8px] tracking-wider text-white/70">REFUND</div>
+                <div className="font-pixel text-[5px] text-white/30 tracking-wider mt-0.5">
+                  {MATCH_ENTRY_FEE_CUP.toLocaleString()} $CUP
+                </div>
+              </div>
+              <div className="p-2 text-center" style={{ background: "#000", border: "1px solid #00AEEF" }}>
+                <div className="font-pixel text-[5px] text-white/40 tracking-wider mb-1">DURATION</div>
+                <div className="font-pixel text-[8px] tracking-wider" style={{ color: "#00AEEF" }}>~60 SEC</div>
+                <div className="font-pixel text-[5px] text-white/30 tracking-wider mt-0.5">90 MIN SIM</div>
+              </div>
+            </div>
+            <p className="font-pixel text-[5px] text-white/40 tracking-wider mt-3 text-center leading-relaxed">
+              PRIZE POT: {(MATCH_ENTRY_FEE_CUP * 2).toLocaleString()} $CUP · WINNER TAKES ALL
+            </p>
           </div>
         </div>
       </div>
