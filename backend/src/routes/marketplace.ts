@@ -27,9 +27,9 @@ router.get("/listings", async (req: Request, res: Response) => {
 // POST /api/marketplace/list
 router.post("/list", async (req: Request, res: Response) => {
   try {
-    const { walletAddress, userAgentId, priceSol, listingType } = req.body;
-    if (!walletAddress || !userAgentId || !priceSol) {
-      res.status(400).json({ error: "walletAddress, userAgentId, priceSol required" });
+    const { walletAddress, userAgentId, priceCup, listingType } = req.body;
+    if (!walletAddress || !userAgentId || !priceCup) {
+      res.status(400).json({ error: "walletAddress, userAgentId, priceCup required" });
       return;
     }
 
@@ -52,7 +52,7 @@ router.post("/list", async (req: Request, res: Response) => {
     const { data, error } = await supabase.from("listings").insert({
       user_agent_id: userAgentId,
       seller_wallet: walletAddress,
-      price_sol: priceSol,
+      price_cup: priceCup,
       listing_type: listingType || "fixed",
       expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
     }).select().single();
@@ -84,7 +84,7 @@ router.post(
       // Verify price for the listing
       const { data: listing } = await supabase
         .from("listings")
-        .select("price_sol")
+        .select("price_cup")
         .eq("id", listingId)
         .eq("is_active", true)
         .single();
@@ -94,7 +94,7 @@ router.post(
         return;
       }
 
-      console.log(`[MARKETPLACE BUY] wallet=${buyerWallet} listing=${listingId} price=${listing.price_sol} tx=${txSignature}`);
+      console.log(`[MARKETPLACE BUY] wallet=${buyerWallet} listing=${listingId} price=${listing.price_cup} tx=${txSignature}`);
 
       // Verify on-chain: tx exists, succeeded, payer matches
       const v = await verifyMarketplaceTransaction(txSignature, buyerWallet);
@@ -140,34 +140,34 @@ router.get("/stats", async (_req: Request, res: Response) => {
     // Active listings count + floor price
     const { data: active, error: aErr } = await supabase
       .from("listings")
-      .select("price_sol")
+      .select("price_cup")
       .eq("is_active", true)
       .gt("expires_at", new Date().toISOString());
     if (aErr) throw aErr;
 
     const activeCount = active?.length || 0;
     const floorPrice = activeCount > 0
-      ? Math.min(...active!.map((l) => Number(l.price_sol)))
+      ? Math.min(...active!.map((l) => Number(l.price_cup)))
       : 0;
 
     // Completed sales (is_active=false + has tx_signature = was bought)
     const { data: sold, error: sErr } = await supabase
       .from("listings")
-      .select("price_sol")
+      .select("price_cup")
       .eq("is_active", false)
       .not("tx_signature", "is", null);
     if (sErr) throw sErr;
 
     const totalTrades = sold?.length || 0;
     const totalVolume = sold
-      ? sold.reduce((sum, l) => sum + Number(l.price_sol), 0)
+      ? sold.reduce((sum, l) => sum + Number(l.price_cup), 0)
       : 0;
 
     res.json({
       activeListings: activeCount,
       totalTrades,
-      totalVolume: Math.round(totalVolume * 1000) / 1000,
-      floorPrice: Math.round(floorPrice * 1000) / 1000,
+      totalVolume: Math.round(totalVolume),
+      floorPrice: Math.round(floorPrice),
     });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "Unknown error";
@@ -182,7 +182,7 @@ router.get("/history", async (req: Request, res: Response) => {
 
     const { data, error } = await supabase
       .from("listings")
-      .select("id, seller_wallet, price_sol, tx_signature, created_at, user_agents(*, agents(*))")
+      .select("id, seller_wallet, price_cup, tx_signature, created_at, user_agents(*, agents(*))")
       .eq("is_active", false)
       .not("tx_signature", "is", null)
       .order("created_at", { ascending: false })

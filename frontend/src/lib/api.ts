@@ -154,7 +154,7 @@ export async function getMarketplaceStats(): Promise<{
 export interface TradeHistoryRow {
   id: string;
   seller_wallet: string;
-  price_sol: number;
+  price_cup: number;
   tx_signature: string;
   created_at: string;
   user_agents?: {
@@ -175,7 +175,7 @@ export async function getTradeHistory(limit = 20): Promise<TradeHistoryRow[]> {
 export async function listAgent(data: {
   walletAddress: string;
   userAgentId: string;
-  priceSol: number;
+  priceCup: number;
   listingType?: string;
 }) {
   return request("/marketplace/list", {
@@ -202,29 +202,6 @@ export async function cancelListing(
   return request(`/marketplace/cancel/${id}`, {
     method: "DELETE",
     body: JSON.stringify({ walletAddress }),
-  });
-}
-
-// ─── Staking ────────────────────────────────────────────────────────
-export async function getStakeInfo(wallet: string): Promise<{
-  isStaker: boolean;
-  stake: { amount: number; stakedAt: string; txSignature: string } | null;
-  threshold: number;
-}> {
-  return request(`/staking/${wallet}`);
-}
-
-export async function stakeTokens(wallet: string, txSignature: string) {
-  return request("/staking/stake", {
-    method: "POST",
-    body: JSON.stringify({ wallet, txSignature }),
-  });
-}
-
-export async function unstakeTokens(wallet: string) {
-  return request("/staking/unstake", {
-    method: "POST",
-    body: JSON.stringify({ wallet }),
   });
 }
 

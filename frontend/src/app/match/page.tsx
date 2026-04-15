@@ -9,18 +9,13 @@ import { getUser, getSquads } from "@/lib/api";
 import { mapUserAgents, DbUserAgent } from "@/lib/mapAgent";
 import { connectSocket, disconnectSocket } from "@/lib/socket";
 import {
-  sendSolPayment,
+  sendCupPayment,
   connection as solConnection,
-  getSolBalance,
-  sendStakeTransaction,
   getTokenBalance,
-  STAKE_AMOUNT,
+  MATCH_ENTRY_FEE_CUP,
 } from "@/lib/solana";
-import { getStakeInfo, stakeTokens, unstakeTokens } from "@/lib/api";
 import dynamic from "next/dynamic";
 import AgentCard from "@/components/cards/AgentCard";
-
-const MATCH_ENTRY_FEE_SOL = 0.01;
 
 const LiveMatchPitch = dynamic(() => import("@/components/match/LiveMatchPitch"), {
   ssr: false,
@@ -96,10 +91,9 @@ interface MatchFinishData {
   pointsEarned: number;
   eloChange: number;
   xpGain: number;
-  prizeSol?: number;
+  prizeCup?: number;
   payoutTx?: string;
-  entryFeeSol?: number;
-  isStaker?: boolean;
+  entryFeeCup?: number;
 }
 
 /* ================================================================== */
@@ -115,9 +109,7 @@ export default function MatchPage() {
   const [pageState, setPageState] = useState<PageState>("squad-select");
   const [isPaying, setIsPaying] = useState(false);
 
-  // Staking state
-  const [isStaker, setIsStaker] = useState(false);
-  const [stakingLoading, setStakingLoading] = useState(false);
+  // $CUP balance
   const [tokenBalance, setTokenBalance] = useState(0);
 
   // Squad building state
@@ -142,13 +134,10 @@ export default function MatchPage() {
   const queueTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const feedRef = useRef<HTMLDivElement>(null);
 
-  // Check staker status on wallet connect
+  // Refresh $CUP balance on wallet connect
   useEffect(() => {
-    if (!publicKey) { setIsStaker(false); return; }
+    if (!publicKey) { setTokenBalance(0); return; }
     const wallet = publicKey.toBase58();
-    getStakeInfo(wallet)
-      .then((info) => setIsStaker(info.isStaker))
-      .catch(() => setIsStaker(false));
     getTokenBalance(wallet)
       .then(setTokenBalance)
       .catch(() => setTokenBalance(0));
@@ -392,49 +381,7 @@ export default function MatchPage() {
     setSelectedSlot(null);
   }, [slots, playableAgents]);
 
-  // Stake $CUP tokens
-  const handleStake = useCallback(async () => {
-    if (!publicKey || !signTransaction) return;
-    setStakingLoading(true);
-    setError(null);
-    try {
-      const bal = await getTokenBalance(publicKey.toBase58());
-      if (bal < STAKE_AMOUNT) {
-        setError(`Need ${STAKE_AMOUNT.toLocaleString()} $CUP to stake. You have ${bal.toLocaleString()}.`);
-        return;
-      }
-      const txSig = await sendStakeTransaction(solConnection, publicKey, signTransaction, STAKE_AMOUNT);
-      await stakeTokens(publicKey.toBase58(), txSig);
-      setIsStaker(true);
-      setTokenBalance(bal - STAKE_AMOUNT);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Stake failed";
-      if (msg.includes("User rejected")) setError("Stake cancelled");
-      else setError(`Stake error: ${msg}`);
-    } finally {
-      setStakingLoading(false);
-    }
-  }, [publicKey, signTransaction]);
-
-  // Unstake $CUP tokens
-  const handleUnstake = useCallback(async () => {
-    if (!publicKey) return;
-    setStakingLoading(true);
-    setError(null);
-    try {
-      await unstakeTokens(publicKey.toBase58());
-      setIsStaker(false);
-      const bal = await getTokenBalance(publicKey.toBase58());
-      setTokenBalance(bal);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Unstake failed";
-      setError(`Unstake error: ${msg}`);
-    } finally {
-      setStakingLoading(false);
-    }
-  }, [publicKey]);
-
-  // Find match — pay entry fee then join queue
+  // Find match — pay CUP entry fee then join queue
   const findMatch = useCallback(async () => {
     if (!publicKey || !socketRef.current || !signTransaction) return;
 
@@ -453,39 +400,36 @@ export default function MatchPage() {
     setIsPaying(true);
 
     try {
-      if (isStaker) {
-        // Staker: no payment needed, join directly
-        socketRef.current.emit("join_queue", {
-          wallet: publicKey.toBase58(),
-          formation,
-          positions: posMap,
-          managerId: manager?.id,
-          useStake: true,
-        });
-      } else {
-        // Normal: pay 0.01 SOL entry fee
-        const balance = await getSolBalance(publicKey.toBase58());
-        if (balance < MATCH_ENTRY_FEE_SOL + 0.001) {
-          setError(`Insufficient balance. Need ${MATCH_ENTRY_FEE_SOL} SOL + fees. You have ${balance.toFixed(4)} SOL.`);
-          setIsPaying(false);
-          return;
-        }
+      const wallet = publicKey.toBase58();
 
-        const txSignature = await sendSolPayment(
-          solConnection,
-          publicKey,
-          signTransaction,
-          MATCH_ENTRY_FEE_SOL
+      // Check $CUP balance upfront
+      const cupBalance = await getTokenBalance(wallet);
+      if (cupBalance < MATCH_ENTRY_FEE_CUP) {
+        setError(
+          `Insufficient $CUP. Need ${MATCH_ENTRY_FEE_CUP.toLocaleString()} $CUP to enter. You have ${cupBalance.toLocaleString()}.`
         );
-
-        socketRef.current.emit("join_queue", {
-          wallet: publicKey.toBase58(),
-          formation,
-          positions: posMap,
-          managerId: manager?.id,
-          txSignature,
-        });
+        setIsPaying(false);
+        return;
       }
+
+      // Send $CUP entry fee to treasury
+      const txSignature = await sendCupPayment(
+        solConnection,
+        publicKey,
+        signTransaction,
+        MATCH_ENTRY_FEE_CUP
+      );
+
+      // Refresh balance after payment
+      setTokenBalance(cupBalance - MATCH_ENTRY_FEE_CUP);
+
+      socketRef.current.emit("join_queue", {
+        wallet,
+        formation,
+        positions: posMap,
+        managerId: manager?.id,
+        txSignature,
+      });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Payment failed";
       if (msg.includes("User rejected")) {
@@ -496,7 +440,7 @@ export default function MatchPage() {
     } finally {
       setIsPaying(false);
     }
-  }, [publicKey, signTransaction, positions, formation, manager, isStaker]);
+  }, [publicKey, signTransaction, positions, formation, manager]);
 
   const cancelQueue = useCallback(() => {
     socketRef.current?.emit("leave_queue");
@@ -686,40 +630,26 @@ export default function MatchPage() {
                   })}
                 </div>
 
-                {/* Staking Card */}
+                {/* $CUP Balance Card */}
                 <div className="mt-4 p-3" style={{
-                  background: isStaker ? "rgba(147,51,234,0.08)" : "rgba(255,255,255,0.02)",
-                  border: `2px solid ${isStaker ? "#9333EA50" : "#333"}`,
-                  boxShadow: isStaker ? "inset -2px -2px 0 #6B21A830, inset 2px 2px 0 #A855F730" : "inset -2px -2px 0 #222, inset 2px 2px 0 #444",
+                  background: "rgba(255,255,255,0.02)",
+                  border: "2px solid #333",
+                  boxShadow: "inset -2px -2px 0 #222, inset 2px 2px 0 #444",
                 }}>
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <div className="flex items-center gap-2 mb-1">
-                        <span className="font-pixel text-[7px] tracking-wider" style={{ color: isStaker ? "#A855F7" : "#fff" }}>
-                          {isStaker ? "⚡ STAKER — FREE ENTRY" : "$CUP STAKING"}
+                        <span className="font-pixel text-[7px] tracking-wider text-white">
+                          $CUP BALANCE
                         </span>
                       </div>
                       <p className="font-pixel text-[5px] text-white/30 tracking-wider">
-                        {isStaker
-                          ? "You play for free. Win → earn opponent's 0.01 SOL. Lose → treasury covers your entry."
-                          : `Stake ${STAKE_AMOUNT.toLocaleString()} $CUP to play matches for free`}
+                        Pay {MATCH_ENTRY_FEE_CUP.toLocaleString()} $CUP to enter. Winner takes {(MATCH_ENTRY_FEE_CUP * 2).toLocaleString()} $CUP.
                       </p>
                     </div>
-                    <button
-                      onClick={isStaker ? handleUnstake : handleStake}
-                      disabled={stakingLoading}
-                      className="font-pixel text-[7px] px-4 py-2 tracking-wider shrink-0 transition-colors disabled:opacity-50"
-                      style={{
-                        background: isStaker ? "#111" : "#9333EA",
-                        color: isStaker ? "#A855F7" : "#fff",
-                        border: `2px solid ${isStaker ? "#9333EA" : "#A855F7"}`,
-                        boxShadow: isStaker
-                          ? "inset -2px -2px 0 #222, inset 2px 2px 0 #444"
-                          : "inset -2px -2px 0 #6B21A8, inset 2px 2px 0 #C084FC",
-                      }}
-                    >
-                      {stakingLoading ? "..." : isStaker ? "UNSTAKE" : "STAKE 5M"}
-                    </button>
+                    <span className="font-pixel text-[9px] tracking-wider shrink-0" style={{ color: "#FFD700" }}>
+                      {tokenBalance.toLocaleString()}
+                    </span>
                   </div>
                 </div>
 
@@ -735,17 +665,17 @@ export default function MatchPage() {
                       className="pixel-btn text-[10px] px-8 py-3 disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                       {isPaying
-                        ? (isStaker ? "JOINING..." : "PAYING...")
+                        ? "PAYING..."
                         : assignedCount < 11
                           ? `NEED ${11 - assignedCount} MORE`
                           : "FIND MATCH"}
                     </button>
                     {assignedCount >= 11 && (
                       <span className="font-pixel text-[6px] tracking-wider" style={{
-                        color: isStaker ? "#A855F7" : "#FFD700",
+                        color: "#FFD700",
                         opacity: 0.6,
                       }}>
-                        {isStaker ? "FREE ENTRY (STAKER)" : `ENTRY FEE: ${MATCH_ENTRY_FEE_SOL} SOL`}
+                        ENTRY FEE: {MATCH_ENTRY_FEE_CUP.toLocaleString()} $CUP
                       </span>
                     )}
                   </div>
@@ -942,10 +872,10 @@ export default function MatchPage() {
             </div>
 
             <div className="font-pixel text-[7px] mb-3 tracking-wider" style={{
-              color: isStaker ? "#A855F7" : "#FFD700",
-              textShadow: isStaker ? "0 0 8px #A855F730" : "0 0 8px #FFD70030",
+              color: "#FFD700",
+              textShadow: "0 0 8px #FFD70030",
             }}>
-              {isStaker ? "STAKER — FREE ENTRY" : `PRIZE POT: ${MATCH_ENTRY_FEE_SOL * 2} SOL`}
+              PRIZE POT: {(MATCH_ENTRY_FEE_CUP * 2).toLocaleString()} $CUP
             </div>
             <div className="font-pixel text-[8px] text-white/30 tracking-[0.2em] animate-pulse">
               KICK OFF IN 3...
@@ -1086,24 +1016,19 @@ export default function MatchPage() {
                 </div>
 
                 {/* Prize display */}
-                {matchResult.prizeSol !== undefined && matchResult.prizeSol > 0 && (
+                {matchResult.prizeCup !== undefined && matchResult.prizeCup > 0 && (
                   <div className="mb-3 py-2 px-3" style={{ background: "rgba(255,215,0,0.08)", border: "2px solid #FFD70050" }}>
                     <div className="font-pixel text-[6px] text-[#FFD700]/60 tracking-wider mb-1">PRIZE WON</div>
                     <div className="font-pixel text-base text-[#FFD700]" style={{ textShadow: "0 0 10px #FFD70040, 2px 2px 0 rgba(0,0,0,0.8)" }}>
-                      +{matchResult.prizeSol} SOL
+                      +{matchResult.prizeCup.toLocaleString()} $CUP
                     </div>
                   </div>
                 )}
-                {matchResult.prizeSol === 0 && resultText === "DRAW" && (
+                {matchResult.prizeCup === 0 && resultText === "DRAW" && (
                   <div className="mb-3 py-2 px-3" style={{ background: "rgba(234,179,8,0.08)", border: "2px solid #eab30850" }}>
                     <div className="font-pixel text-[6px] text-[#eab308]/60 tracking-wider">
-                      {matchResult.isStaker ? "STAKER — NO COST" : "ENTRY FEE REFUNDED"}
+                      ENTRY FEE REFUNDED
                     </div>
-                  </div>
-                )}
-                {matchResult.isStaker && matchResult.prizeSol === 0 && resultText === "DEFEAT" && (
-                  <div className="mb-3 py-2 px-3" style={{ background: "rgba(147,51,234,0.06)", border: "2px solid #9333EA30" }}>
-                    <div className="font-pixel text-[6px] text-[#A855F7]/50 tracking-wider">STAKER — TREASURY COVERED YOUR LOSS</div>
                   </div>
                 )}
 

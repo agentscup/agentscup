@@ -1,6 +1,6 @@
 import { Router, Request, Response } from "express";
 import { supabase } from "../lib/supabase";
-import { verifyMarketplaceTransaction } from "../lib/solana";
+import { verifyTokenPaymentTransaction } from "../lib/solana";
 import { selectPackCards, PACK_CONFIGS } from "../services/packService";
 import { packLimiter } from "../middleware/rateLimiter";
 import { dedup } from "../middleware/dedup";
@@ -33,13 +33,12 @@ router.post(
         return;
       }
 
-      // ── Verify on-chain payment ──
-      // Checks: tx exists, succeeded, payer matches wallet
-      // Amount check skipped — tx was created by our frontend with correct amount
-      // and user approved it in their wallet. Idempotency in DB prevents double-claim.
-      const verification = await verifyMarketplaceTransaction(
+      // ── Verify on-chain $CUP payment ──
+      // Checks: tx exists, succeeded, payer matches, treasury received >= priceCup tokens.
+      const verification = await verifyTokenPaymentTransaction(
         txSignature,
-        walletAddress
+        walletAddress,
+        packConfig.priceCup
       );
       if (!verification.valid) {
         console.log(`[PACK] TX verification failed: ${verification.error} wallet=${walletAddress} tx=${txSignature}`);
@@ -58,7 +57,7 @@ router.post(
         p_wallet_address: walletAddress,
         p_pack_type: packType,
         p_tx_signature: txSignature,
-        p_amount_sol: packConfig.priceSol,
+        p_amount_cup: packConfig.priceCup,
         p_agent_ids: agentIds,
         p_mint_addresses: mintAddresses,
       });

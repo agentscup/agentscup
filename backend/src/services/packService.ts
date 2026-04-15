@@ -4,7 +4,7 @@ import crypto from "crypto";
 export const PACK_CONFIGS = {
   starter: {
     name: "Starter Pack",
-    priceSol: 0.1,
+    priceCup: 250_000,
     cardCount: 5,
     rareGuarantee: 0,
     epicChance: 0.02,
@@ -13,7 +13,7 @@ export const PACK_CONFIGS = {
   },
   pro: {
     name: "Pro Pack",
-    priceSol: 0.25,
+    priceCup: 500_000,
     cardCount: 8,
     rareGuarantee: 1,
     epicChance: 0.05,
@@ -22,7 +22,7 @@ export const PACK_CONFIGS = {
   },
   elite: {
     name: "Elite Pack",
-    priceSol: 0.5,
+    priceCup: 1_000_000,
     cardCount: 12,
     rareGuarantee: 3,
     epicChance: 0.2,
@@ -31,7 +31,7 @@ export const PACK_CONFIGS = {
   },
   legendary: {
     name: "Legendary Pack",
-    priceSol: 1.0,
+    priceCup: 2_000_000,
     cardCount: 15,
     rareGuarantee: 5,
     epicChance: 0.35,

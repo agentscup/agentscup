@@ -10,7 +10,7 @@ create or replace function open_pack_atomic(
   p_wallet_address text,
   p_pack_type text,
   p_tx_signature text,
-  p_amount_sol numeric,
+  p_amount_cup numeric,
   p_agent_ids text[],
   p_mint_addresses text[]
 ) returns jsonb as $$
@@ -76,12 +76,12 @@ begin
   end loop;
 
   -- STEP 4: Record the purchase (UNIQUE constraint on tx_signature prevents duplicates)
-  insert into pack_purchases (user_id, pack_type, tx_signature, amount_sol, cards_received)
+  insert into pack_purchases (user_id, pack_type, tx_signature, amount_cup, cards_received)
   values (
     v_user_id,
     p_pack_type,
     p_tx_signature,
-    p_amount_sol,
+    p_amount_cup,
     to_jsonb(p_agent_ids)
   );
 

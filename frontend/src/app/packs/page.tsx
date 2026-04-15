@@ -7,7 +7,7 @@ import { Agent, PackType } from "@/types";
 import { getRarityColor } from "@/lib/utils";
 import { openPack } from "@/lib/api";
 import { mapDbAgent, type DbAgent } from "@/lib/mapAgent";
-import { createPackPurchaseTx } from "@/lib/solana";
+import { sendCupPayment } from "@/lib/solana";
 import AgentCard from "@/components/cards/AgentCard";
 
 function PackCard({ pack, onBuy, disabled }: { pack: PackType; onBuy: () => void; disabled: boolean }) {
@@ -65,7 +65,7 @@ function PackCard({ pack, onBuy, disabled }: { pack: PackType; onBuy: () => void
         disabled={disabled}
         className="pixel-btn w-full text-[8px] disabled:opacity-40 disabled:cursor-not-allowed"
       >
-        {pack.priceSol} SOL
+        {pack.priceCup.toLocaleString()} $CUP
       </button>
     </div>
   );
@@ -80,7 +80,7 @@ export default function PacksPage() {
   const [buying, setBuying] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Store pending tx for retry — if SOL was sent but API call failed
+  // Store pending tx for retry — if $CUP was sent but API call failed
   const pendingTx = useRef<{ txSignature: string; packType: string } | null>(null);
 
   async function claimPack(txSignature: string, packType: string) {
@@ -121,13 +121,15 @@ export default function PacksPage() {
         return;
       }
 
-      // Step 1: Send SOL payment to treasury
-      const tx = await createPackPurchaseTx(publicKey, pack.priceSol);
-      const signed = await signTransaction(tx);
-      const txSignature = await connection.sendRawTransaction(signed.serialize());
-      await connection.confirmTransaction(txSignature, "confirmed");
+      // Step 1: Send $CUP payment to treasury
+      const txSignature = await sendCupPayment(
+        connection,
+        publicKey,
+        signTransaction,
+        pack.priceCup
+      );
 
-      // SOL is sent — store tx in case the API call fails
+      // $CUP is sent — store tx in case the API call fails
       pendingTx.current = { txSignature, packType: pack.id };
 
       // Step 2: Claim pack from backend (idempotent — safe to retry)
@@ -135,13 +137,18 @@ export default function PacksPage() {
     } catch (err: unknown) {
       let msg = err instanceof Error ? err.message : "Failed to open pack";
 
-      // Detect insufficient SOL balance
-      if (msg.includes("debit an account") || msg.includes("insufficient") || msg.includes("0x1")) {
-        msg = "Insufficient SOL balance. You need SOL in your wallet to buy packs.";
+      // Detect insufficient $CUP balance
+      if (
+        msg.toLowerCase().includes("insufficient") ||
+        msg.includes("0x1") ||
+        msg.includes("TokenAccount") ||
+        msg.includes("debit an account")
+      ) {
+        msg = `Insufficient $CUP balance. You need at least ${pack.priceCup.toLocaleString()} $CUP to buy this pack.`;
       }
 
       if (pendingTx.current) {
-        // SOL was sent but API failed — show retry option
+        // $CUP was sent but API failed — show retry option
         setError(`${msg}. Your payment was sent. Click the button again to claim your pack.`);
       } else {
         setError(msg);

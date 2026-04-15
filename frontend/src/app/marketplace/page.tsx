@@ -13,7 +13,7 @@ const AgentCardDetail = dynamic(() => import("@/components/cards/AgentCardDetail
 });
 import { getListings, getUser, listAgent, cancelListing, buyAgent, getMarketplaceStats, getTradeHistory, type TradeHistoryRow } from "@/lib/api";
 import { mapUserAgentsFull, mapDbAgent, MappedUserAgent, DbUserAgent, DbAgent } from "@/lib/mapAgent";
-import { createBuyAgentTx, connection } from "@/lib/solana";
+import { sendCupMarketplacePayment, connection } from "@/lib/solana";
 
 /* Pending buy stored in ref so it survives re-renders but not page reloads */
 interface PendingBuy {
@@ -24,7 +24,7 @@ interface PendingBuy {
 interface ListingRow {
   id: string;
   seller_wallet: string;
-  price_sol: number;
+  price_cup: number;
   listing_type: string;
   created_at: string;
   expires_at: string;
@@ -44,7 +44,7 @@ const SORT_OPTIONS = [
 type Tab = "browse" | "sell" | "history";
 
 export default function MarketplacePage() {
-  const { publicKey, sendTransaction } = useWallet();
+  const { publicKey, signTransaction } = useWallet();
 
   // Tab
   const [tab, setTab] = useState<Tab>("browse");
@@ -149,8 +149,8 @@ export default function MarketplacePage() {
       items = items.filter((l) => l.user_agents?.agents?.name?.toLowerCase().includes(q));
     }
     switch (sort) {
-      case "price-asc": items.sort((a, b) => Number(a.price_sol) - Number(b.price_sol)); break;
-      case "price-desc": items.sort((a, b) => Number(b.price_sol) - Number(a.price_sol)); break;
+      case "price-asc": items.sort((a, b) => Number(a.price_cup) - Number(b.price_cup)); break;
+      case "price-desc": items.sort((a, b) => Number(b.price_cup) - Number(a.price_cup)); break;
       case "rating-desc": items.sort((a, b) => (b.user_agents?.agents?.overall || 0) - (a.user_agents?.agents?.overall || 0)); break;
       default: break;
     }
@@ -172,9 +172,9 @@ export default function MarketplacePage() {
   // List agent for sale
   async function handleList(userAgentId: string) {
     if (!publicKey) return;
-    const price = parseFloat(listingPrices[userAgentId] || "0");
+    const price = Math.floor(parseFloat(listingPrices[userAgentId] || "0"));
     if (!price || price <= 0) {
-      setSellError("Enter a valid price in SOL");
+      setSellError("Enter a valid price in $CUP (whole tokens)");
       return;
     }
     setSellError(null);
@@ -184,7 +184,7 @@ export default function MarketplacePage() {
       await listAgent({
         walletAddress: publicKey.toBase58(),
         userAgentId,
-        priceSol: price,
+        priceCup: price,
       });
       setSellSuccess("Agent listed successfully!");
       setListingPrices(prev => { const n = { ...prev }; delete n[userAgentId]; return n; });
@@ -216,7 +216,7 @@ export default function MarketplacePage() {
     }
   }
 
-  // Claim a pending buy (retry backend call only — SOL already sent)
+  // Claim a pending buy (retry backend call only — $CUP already sent)
   async function claimPendingBuy(pending: PendingBuy) {
     if (!publicKey) return;
     setBuyingId(pending.listingId);
@@ -239,9 +239,9 @@ export default function MarketplacePage() {
     }
   }
 
-  // Buy agent with retry-safe flow
+  // Buy agent with retry-safe flow (paid in $CUP)
   async function handleBuy(listing: ListingRow) {
-    if (!publicKey || !sendTransaction) return;
+    if (!publicKey || !signTransaction) return;
     const agent = listing.user_agents?.agents;
     if (!agent) return;
 
@@ -254,18 +254,20 @@ export default function MarketplacePage() {
     setBuyingId(listing.id);
     setBuyError(null);
     try {
-      // Step 1: Create & send Solana transaction
+      // Step 1: Send $CUP payment (buyer → seller + treasury fee)
       const sellerPubkey = new PublicKey(listing.seller_wallet);
-      const tx = await createBuyAgentTx(publicKey, sellerPubkey, Number(listing.price_sol));
-      const signature = await sendTransaction(tx, connection);
+      const signature = await sendCupMarketplacePayment(
+        connection,
+        publicKey,
+        sellerPubkey,
+        signTransaction,
+        Number(listing.price_cup)
+      );
 
-      // Step 2: Store pending buy IMMEDIATELY after tx is sent (before confirmation)
+      // Step 2: Store pending buy IMMEDIATELY after tx is sent
       pendingBuy.current = { listingId: listing.id, txSignature: signature };
 
-      // Step 3: Wait for on-chain confirmation
-      await connection.confirmTransaction(signature, "confirmed");
-
-      // Step 4: Notify backend to transfer ownership
+      // Step 3: Notify backend to transfer ownership
       await buyAgent({
         buyerWallet: publicKey.toBase58(),
         listingId: listing.id,
@@ -280,7 +282,7 @@ export default function MarketplacePage() {
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Purchase failed";
       if (pendingBuy.current) {
-        // SOL was sent but backend call failed — show retry message
+        // $CUP was sent but backend call failed — show retry message
         setBuyError(`Payment sent but transfer failed: ${msg}. Click BUY again to claim your agent.`);
       } else {
         // TX itself failed (user rejected, insufficient balance, etc.)
@@ -338,11 +340,11 @@ export default function MarketplacePage() {
           </div>
           <div className="text-center">
             <div className="font-pixel text-[6px] text-white/40 tracking-wider mb-1">VOLUME</div>
-            <div className="font-pixel text-[10px] text-[#FFD700]">{stats.totalVolume} SOL</div>
+            <div className="font-pixel text-[10px] text-[#FFD700]">{stats.totalVolume.toLocaleString()} $CUP</div>
           </div>
           <div className="text-center">
             <div className="font-pixel text-[6px] text-white/40 tracking-wider mb-1">FLOOR PRICE</div>
-            <div className="font-pixel text-[10px] text-[#00E5FF]">{stats.floorPrice > 0 ? `${stats.floorPrice} SOL` : "—"}</div>
+            <div className="font-pixel text-[10px] text-[#00E5FF]">{stats.floorPrice > 0 ? `${stats.floorPrice.toLocaleString()} $CUP` : "—"}</div>
           </div>
         </div>
       </div>
@@ -416,7 +418,7 @@ export default function MarketplacePage() {
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
                         <span className="font-pixel text-[6px] text-white/40 tracking-wider">PRICE</span>
-                        <span className="font-pixel text-[8px] text-white">{listing.price_sol} SOL</span>
+                        <span className="font-pixel text-[8px] text-white">{Number(listing.price_cup).toLocaleString()} $CUP</span>
                       </div>
                       <div className="flex items-center justify-between">
                         <span className="font-pixel text-[5px] text-white/25 tracking-wider">
@@ -499,7 +501,7 @@ export default function MarketplacePage() {
                           <div className="space-y-2">
                             <div className="flex items-center justify-between">
                               <span className="font-pixel text-[6px] text-white/40 tracking-wider">PRICE</span>
-                              <span className="font-pixel text-[8px] text-white">{listing.price_sol} SOL</span>
+                              <span className="font-pixel text-[8px] text-white">{Number(listing.price_cup).toLocaleString()} $CUP</span>
                             </div>
                             <button
                               onClick={() => handleCancel(listing.id)}
@@ -549,14 +551,14 @@ export default function MarketplacePage() {
                           <div className="flex items-center gap-2">
                             <input
                               type="number"
-                              step="0.01"
-                              min="0.01"
-                              placeholder="SOL"
+                              step="1"
+                              min="1"
+                              placeholder="$CUP"
                               value={price}
                               onChange={(e) => setListingPrices(prev => ({ ...prev, [ua.userAgentId]: e.target.value }))}
                               className="pixel-input flex-1 text-[8px] py-1.5"
                             />
-                            <span className="font-pixel text-[6px] text-white/40 tracking-wider">SOL</span>
+                            <span className="font-pixel text-[6px] text-white/40 tracking-wider">$CUP</span>
                           </div>
                           <button
                             onClick={() => handleList(ua.userAgentId)}
@@ -639,7 +641,7 @@ export default function MarketplacePage() {
                       <span className="font-pixel text-[7px] text-white/60 tracking-wider">{agent.position}</span>
                     </div>
                     <div className="text-center">
-                      <span className="font-pixel text-[8px] text-[#FFD700] tracking-wider">{trade.price_sol} SOL</span>
+                      <span className="font-pixel text-[8px] text-[#FFD700] tracking-wider">{Number(trade.price_cup).toLocaleString()} $CUP</span>
                     </div>
                     <div className="text-center">
                       <span className="font-pixel text-[6px] text-white/40 tracking-wider">{dateStr} {timeStr}</span>

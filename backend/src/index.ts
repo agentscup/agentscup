@@ -10,7 +10,6 @@ import squadRoutes from "./routes/squads";
 import matchRoutes from "./routes/matches";
 import marketplaceRoutes from "./routes/marketplace";
 import leaderboardRoutes from "./routes/leaderboard";
-import stakingRoutes from "./routes/staking";
 import { setupMatchSocket } from "./socket/matchSocket";
 import { generalLimiter } from "./middleware/rateLimiter";
 
@@ -46,7 +45,6 @@ app.use("/api/squads", squadRoutes);
 app.use("/api/matches", matchRoutes);
 app.use("/api/marketplace", marketplaceRoutes);
 app.use("/api/leaderboard", leaderboardRoutes);
-app.use("/api/staking", stakingRoutes);
 
 // Socket.io for real-time matches
 setupMatchSocket(io);

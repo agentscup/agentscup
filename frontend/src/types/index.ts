@@ -61,14 +61,14 @@ export interface Match {
   awayScore: number;
   status: MatchStatus;
   events: MatchEvent[];
-  stakeSol: number;
+  entryFeeCup: number;
 }
 
 export interface Listing {
   id: string;
   userAgent: UserAgent;
   sellerWallet: string;
-  priceSol: number;
+  priceCup: number;
   listingType: ListingType;
   expiresAt: string;
   createdAt: string;
@@ -77,7 +77,7 @@ export interface Listing {
 export interface PackType {
   id: string;
   name: string;
-  priceSol: number;
+  priceCup: number;
   cardCount: number;
   rareGuarantee: number;
   epicChance: number;

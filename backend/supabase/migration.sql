@@ -78,7 +78,6 @@ create table if not exists matches (
   away_score integer not null default 0,
   status text not null default 'pending',
   events jsonb not null default '[]',
-  stake_sol numeric(10,4) not null default 0,
   seed bigint,
   tx_signature text,
   created_at timestamptz not null default now(),
@@ -94,7 +93,7 @@ create table if not exists listings (
   id uuid primary key default gen_random_uuid(),
   user_agent_id uuid not null references user_agents(id) on delete cascade,
   seller_wallet text not null,
-  price_sol numeric(10,4) not null,
+  price_cup numeric(18,0) not null,
   listing_type text not null default 'fixed',
   is_active boolean not null default true,
   expires_at timestamptz,
@@ -128,7 +127,7 @@ create table if not exists pack_purchases (
   user_id uuid not null references users(id) on delete cascade,
   pack_type text not null,
   tx_signature text unique not null,
-  amount_sol numeric(10,4) not null,
+  amount_cup numeric(18,0) not null,
   cards_received jsonb not null default '[]',
   created_at timestamptz not null default now()
 );
