@@ -11,6 +11,11 @@ const MatchPreview = dynamic(() => import("@/components/home/MatchPreview"), {
   loading: () => <div className="w-full max-w-2xl mx-auto aspect-[3/2]" />,
 });
 
+const CupToken = dynamic(() => import("@/components/home/CupToken"), {
+  ssr: false,
+  loading: () => <div className="w-full h-[360px]" />,
+});
+
 const features = [
   {
     icon: "[ ]",
@@ -73,6 +78,15 @@ export default function Home() {
             BROWSE AGENTS
           </Link>
         </div>
+      </section>
+
+      {/* $CUP Token */}
+      <section className="relative max-w-7xl mx-auto px-4 sm:px-6 py-12">
+        <h2 className="font-pixel text-[10px] sm:text-xs text-white text-center mb-8 tracking-wider" style={{ textShadow: "2px 2px 0 #B8960C" }}>
+          <span className="inline-block w-2 h-2 bg-[#FFD700] rounded-full mr-2 animate-pulse" />
+          $CUP TOKEN
+        </h2>
+        <CupToken />
       </section>
 
       {/* Live Match Preview */}
