@@ -123,7 +123,6 @@ export default function MatchPage() {
   // Match state
   const [mySide, setMySide] = useState<"home" | "away">("home");
   const [opponentName, setOpponentName] = useState("");
-  const [vsBot, setVsBot] = useState(false);
   const [myTeamName, setMyTeamName] = useState("");
   const [displayedEvents, setDisplayedEvents] = useState<MatchEventData[]>([]);
   const [homeScore, setHomeScore] = useState(0);
@@ -213,11 +212,9 @@ export default function MatchPage() {
       opponent: { wallet: string; teamName: string };
       homeTeamName: string;
       awayTeamName: string;
-      vsBot?: boolean;
     }) => {
       setMySide(data.side);
       setOpponentName(data.opponent.teamName);
-      setVsBot(!!data.vsBot);
       setMyTeamName(data.side === "home" ? data.homeTeamName : data.awayTeamName);
       setDisplayedEvents([]);
       setHomeScore(0);
@@ -917,19 +914,9 @@ export default function MatchPage() {
           </div>
 
           <div className="text-center py-12 relative">
-            <div className="font-pixel text-[7px] mb-2 tracking-[0.3em] animate-pulse" style={{ color: vsBot ? "#FFA500" : "#00AEEF" }}>
-              {vsBot ? "PRACTICE MATCH" : "MATCH FOUND"}
+            <div className="font-pixel text-[7px] text-[#00AEEF] mb-4 tracking-[0.3em] animate-pulse">
+              MATCH FOUND
             </div>
-            {vsBot && (
-              <div className="inline-block px-2 py-0.5 mb-4 font-pixel text-[6px] tracking-[0.2em]" style={{
-                background: "#3a2800",
-                color: "#FFA500",
-                border: "1px solid #FFA500",
-                boxShadow: "inset -1px -1px 0 #805400, inset 1px 1px 0 #FFD48A",
-              }}>
-                VS CPU · NO ELO · FULL PAYOUT
-              </div>
-            )}
 
             <div className="flex items-center justify-center gap-3 sm:gap-10 max-w-lg mx-auto mb-8 px-2">
               {/* Home */}
@@ -939,7 +926,7 @@ export default function MatchPage() {
                   style={{ borderColor: "#1E8F4E" }}
                 >
                   <div className="font-pixel text-[5px] sm:text-[6px] text-[#1E8F4E] mb-1 sm:mb-2 tracking-wider">
-                    {mySide === "home" ? "YOU" : (vsBot ? "CPU" : "OPPONENT")}
+                    {mySide === "home" ? "YOU" : "OPPONENT"}
                   </div>
                   <div className="font-pixel text-[7px] sm:text-[10px] text-white tracking-wider truncate">
                     {mySide === "home" ? (myTeamName || "YOUR SQUAD") : opponentName}
@@ -972,7 +959,7 @@ export default function MatchPage() {
                   style={{ borderColor: "#FF3B3B" }}
                 >
                   <div className="font-pixel text-[5px] sm:text-[6px] text-[#FF3B3B] mb-1 sm:mb-2 tracking-wider">
-                    {mySide === "away" ? "YOU" : (vsBot ? "CPU" : "OPPONENT")}
+                    {mySide === "away" ? "YOU" : "OPPONENT"}
                   </div>
                   <div className="font-pixel text-[7px] sm:text-[10px] text-white tracking-wider truncate">
                     {mySide === "away" ? (myTeamName || "YOUR SQUAD") : opponentName}
@@ -1007,21 +994,6 @@ export default function MatchPage() {
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6">
-      {vsBot && (
-        <div className="mb-3 flex justify-center">
-          <div className="inline-flex items-center gap-2 px-3 py-1 font-pixel text-[6px] tracking-[0.2em]" style={{
-            background: "#3a2800",
-            color: "#FFA500",
-            border: "2px solid #FFA500",
-            boxShadow: "inset -2px -2px 0 #805400, inset 2px 2px 0 #FFD48A, 3px 3px 0 rgba(0,0,0,0.5)",
-            imageRendering: "pixelated",
-          }}>
-            <span className="w-1.5 h-1.5 bg-[#FFA500] animate-pulse" />
-            PRACTICE MATCH · VS CPU · NO ELO
-          </div>
-        </div>
-      )}
-
       {/* Live pitch */}
       <LiveMatchPitch
         events={displayedEvents}

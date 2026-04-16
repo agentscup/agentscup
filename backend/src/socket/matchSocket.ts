@@ -793,6 +793,8 @@ async function startBotMatch(io: Server, player: QueueEntry) {
   walletToMatch.set(player.wallet, matchId);
 
   const playerSocket = io.sockets.sockets.get(player.socketId);
+  // Bot matches are indistinguishable from real matches on the client —
+  // no `vsBot` flag leaks out so the player sees a normal "MATCH FOUND" flow.
   playerSocket?.emit("match_found", {
     matchId,
     side: "home",
@@ -802,7 +804,6 @@ async function startBotMatch(io: Server, player: QueueEntry) {
     },
     homeTeamName: player.teamName,
     awayTeamName: botTeamName,
-    vsBot: true,
   });
 
   console.log(
@@ -852,19 +853,26 @@ async function finishBotMatch(io: Server, match: ActiveMatch) {
       console.log(`[BOT] Player lost — no payout`);
     }
 
-    // ── XP only (no ELO / leaderboard — prevents bot farming) ──
+    // ── ELO + XP ──────────────────────────────────────────────
+    //   Win  → +16 ELO (fair-match gain vs equal-rated opponent)
+    //   Draw → +5  ELO (honorable-draw bonus)
+    //   Loss →  0  ELO (no penalty — player was forced into bot fallback)
     const xpGain = playerWon ? 30 : isDraw ? 15 : 5;
     const pointsEarned = playerWon ? 3 : isDraw ? 1 : 0;
+    const eloChange = playerWon ? 16 : isDraw ? 5 : 0;
 
     const { data: user } = await supabase
       .from("users")
-      .select("xp")
+      .select("xp, elo")
       .eq("id", match.homeUserId)
       .single();
     if (user) {
       await supabase
         .from("users")
-        .update({ xp: (user.xp || 0) + xpGain })
+        .update({
+          xp: (user.xp || 0) + xpGain,
+          elo: (user.elo || 1000) + eloChange,
+        })
         .eq("id", match.homeUserId);
     }
 
@@ -881,12 +889,11 @@ async function finishBotMatch(io: Server, match: ActiveMatch) {
         manOfTheMatch: result.manOfTheMatch,
       },
       pointsEarned,
-      eloChange: 0, // bot matches don't affect ELO
+      eloChange,
       xpGain,
       prizeCup: playerPrizeCup,
       payoutTx,
       entryFeeCup: MATCH_ENTRY_FEE_CUP,
-      vsBot: true,
     });
 
     console.log(
