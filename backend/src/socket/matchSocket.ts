@@ -37,6 +37,7 @@ interface ActiveMatch {
   currentMinute: number;
   maxMinute: number;
   interval?: ReturnType<typeof setInterval>;
+  isBotMatch?: boolean;
 }
 
 // In-memory state
@@ -46,6 +47,15 @@ const walletToSocket = new Map<string, string>();            // wallet → socke
 const socketToWallet = new Map<string, string>();            // socketId → wallet
 const walletToMatch = new Map<string, string>();             // wallet → matchId
 const usedTxSignatures = new Set<string>();                  // prevent TX reuse
+const botFallbackTimers = new Map<string, ReturnType<typeof setTimeout>>(); // wallet → bot match timer
+
+// Wait this long for a real opponent before falling back to a bot match
+const BOT_FALLBACK_MS = 20_000;
+
+// Bot match outcome distribution
+const BOT_WIN_CHANCE = 0.45;   // player wins
+const BOT_LOSS_CHANCE = 0.45;  // player loses
+// draw = 1 - WIN - LOSS = 0.10
 
 export function setupMatchSocket(io: Server) {
   io.on("connection", (socket: Socket) => {
@@ -144,6 +154,11 @@ export function setupMatchSocket(io: Server) {
 
         // Try to find a match
         tryMatchPlayers(io);
+
+        // If still in queue (no opponent yet), schedule bot fallback
+        if (matchmakingQueue.has(wallet)) {
+          scheduleBotFallback(io, wallet);
+        }
       } catch (err) {
         console.error("[MATCH] join_queue error:", err);
         socket.emit("queue_error", { message: "Failed to join queue" });
@@ -155,6 +170,7 @@ export function setupMatchSocket(io: Server) {
       const wallet = socketToWallet.get(socket.id);
       if (wallet && matchmakingQueue.has(wallet)) {
         matchmakingQueue.delete(wallet);
+        cancelBotFallback(wallet);
 
         // Refund entry fee in $CUP
         console.log(`[MATCH] ${wallet.slice(0, 8)} left queue — refunding ${MATCH_ENTRY_FEE_CUP} $CUP`);
@@ -174,6 +190,7 @@ export function setupMatchSocket(io: Server) {
         // Refund if was in queue (not yet matched)
         if (matchmakingQueue.has(wallet)) {
           matchmakingQueue.delete(wallet);
+          cancelBotFallback(wallet);
           console.log(`[MATCH] ${wallet.slice(0, 8)} disconnected from queue — refunding`);
           const refund = await sendPayout(wallet, MATCH_ENTRY_FEE_CUP);
           if (!refund.success) {
@@ -258,6 +275,10 @@ function tryMatchPlayers(io: Server) {
   const entries = Array.from(matchmakingQueue.values());
   const home = entries[0];
   const away = entries[1];
+
+  // Cancel pending bot fallbacks — these two are about to play each other
+  cancelBotFallback(home.wallet);
+  cancelBotFallback(away.wallet);
 
   // Remove from queue
   matchmakingQueue.delete(home.wallet);
@@ -360,7 +381,11 @@ function streamMatchEvents(io: Server, match: ActiveMatch) {
     // Check if match is over
     if (gameMinute >= match.maxMinute) {
       clearInterval(match.interval);
-      finishMatch(io, match);
+      if (match.isBotMatch) {
+        finishBotMatch(io, match);
+      } else {
+        finishMatch(io, match);
+      }
     }
   }, 650); // ~650ms per game minute → ~60 seconds total
 }
@@ -600,3 +625,278 @@ async function buildVerifiedSquad(
 }
 // Wallet param kept in signature for future use
 void buildVerifiedSquad;
+
+/* ================================================================== */
+/*  Bot Fallback — play against CPU when no human opponent arrives    */
+/*  Distribution: 45% win · 45% loss · 10% draw                        */
+/*  Economy: identical to PvP (100k entry, 200k winner payout,         */
+/*           100k refund on draw). ELO / leaderboard NOT affected.     */
+/* ================================================================== */
+
+const BOT_TEAM_NAMES = [
+  "CPU XI", "BINARY BULLS", "AI WARRIORS", "MACHINE MINUTES",
+  "NEURAL NETS", "DIGITAL DYNAMOS", "ROBOTIC ROVERS", "PIXEL PHANTOMS",
+  "QUANTUM KNIGHTS", "BYTE BRIGADE", "SILICON SPARTANS", "DATA DRAGONS",
+];
+
+const BOT_FIRST_NAMES = [
+  "MAX", "ZARA", "LIAM", "NOVA", "KAI", "ORION", "LYRA", "JAX",
+  "MILO", "NYX", "REX", "FINN", "AXEL", "VEGA", "JUNO", "ATLAS",
+  "IRIS", "ZANE", "RYN", "ODIN",
+];
+
+const BOT_LAST_NAMES = [
+  "BYTE", "VOLT", "CORE", "FLUX", "NODE", "SYNC", "PIXEL", "FORGE",
+  "BLAZE", "SHADOW", "FROST", "WAVE", "STORM", "ECHO", "RUSH", "FLARE",
+  "QUANTUM", "VECTOR", "CIRCUIT", "HEX",
+];
+
+function pickRandom<T>(arr: readonly T[]): T {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+function scheduleBotFallback(io: Server, wallet: string) {
+  cancelBotFallback(wallet);
+  const timer = setTimeout(() => {
+    botFallbackTimers.delete(wallet);
+    const entry = matchmakingQueue.get(wallet);
+    if (!entry) return; // already matched or left queue
+    matchmakingQueue.delete(wallet);
+    void startBotMatch(io, entry);
+  }, BOT_FALLBACK_MS);
+  botFallbackTimers.set(wallet, timer);
+}
+
+function cancelBotFallback(wallet: string) {
+  const t = botFallbackTimers.get(wallet);
+  if (t) {
+    clearTimeout(t);
+    botFallbackTimers.delete(wallet);
+  }
+}
+
+/**
+ * Build a synthetic bot squad mirroring the player's formation, with stats
+ * centered around (playerAvg + overallOffset). Offset pushes outcome probability
+ * in the engine's rejection sampling:
+ *   offset < 0 → bot weaker → player more likely to win
+ *   offset > 0 → bot stronger → player more likely to lose
+ *   offset = 0 → similar strength → draw/close match more likely
+ */
+function buildBotSquad(playerSquad: SquadInput, overallOffset: number): SquadInput {
+  const avgOverall =
+    playerSquad.players.length > 0
+      ? Math.round(
+          playerSquad.players.reduce((sum, p) => sum + p.overall, 0) / playerSquad.players.length
+        )
+      : 75;
+  const target = Math.max(45, Math.min(95, avgOverall + overallOffset));
+
+  const jitter = () => Math.round((Math.random() - 0.5) * 8); // ±4
+  const stat = (base: number) => Math.max(40, Math.min(99, base + jitter()));
+
+  const players: PlayerInput[] = playerSquad.players.map(({ slot, position }) => {
+    const base = target + jitter();
+    const overall = Math.max(40, Math.min(99, base));
+    return {
+      slot,
+      position,
+      name: `${pickRandom(BOT_FIRST_NAMES)} ${pickRandom(BOT_LAST_NAMES)}`,
+      overall,
+      pace: stat(overall),
+      shooting: stat(overall),
+      passing: stat(overall),
+      dribbling: stat(overall),
+      defending: stat(overall),
+      physical: stat(overall),
+    };
+  });
+
+  return {
+    formation: playerSquad.formation,
+    players,
+    managerBonus: 0,
+  };
+}
+
+async function startBotMatch(io: Server, player: QueueEntry) {
+  // 1. Roll predetermined outcome
+  const roll = Math.random();
+  const desiredOutcome: "win" | "loss" | "draw" =
+    roll < BOT_WIN_CHANCE
+      ? "win"
+      : roll < BOT_WIN_CHANCE + BOT_LOSS_CHANCE
+        ? "loss"
+        : "draw";
+
+  // 2. Build bot squad biased toward desired outcome
+  const offsetMap = { win: -10, loss: +10, draw: 0 };
+  const botSquad = buildBotSquad(player.squad, offsetMap[desiredOutcome]);
+
+  // 3. Rejection-sample seeds until the engine produces the desired outcome
+  let result: MatchResult | null = null;
+  let seed = Date.now();
+  const maxAttempts = desiredOutcome === "draw" ? 800 : 300;
+
+  for (let i = 0; i < maxAttempts; i++) {
+    const testSeed = Date.now() + i * 7919 + Math.floor(Math.random() * 999_983);
+    const r = simulateMatch(player.squad, botSquad, testSeed);
+    const isDraw = r.homeScore === r.awayScore;
+    const playerWon = r.homeScore > r.awayScore;
+
+    const match =
+      (desiredOutcome === "win" && playerWon && !isDraw) ||
+      (desiredOutcome === "loss" && !playerWon && !isDraw) ||
+      (desiredOutcome === "draw" && isDraw);
+
+    if (match) {
+      result = r;
+      seed = testSeed;
+      break;
+    }
+  }
+
+  // 4. Safety fallback — if rejection sampling couldn't hit it, accept last roll
+  if (!result) {
+    seed = Date.now();
+    result = simulateMatch(player.squad, botSquad, seed);
+    console.warn(
+      `[BOT] Could not achieve desired=${desiredOutcome} for ${player.wallet.slice(0, 8)} — using fallback (${result.homeScore}-${result.awayScore})`
+    );
+  }
+
+  const matchId = `bot_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const maxMinute =
+    result.events.length > 0 ? result.events[result.events.length - 1].minute : 90;
+  const botTeamName = pickRandom(BOT_TEAM_NAMES);
+
+  const match: ActiveMatch = {
+    matchId,
+    homeWallet: player.wallet,
+    awayWallet: "__BOT__",
+    homeUserId: player.userId,
+    awayUserId: "__BOT__",
+    homeSocketId: player.socketId,
+    awaySocketId: "__BOT__",
+    homeTeamName: player.teamName,
+    awayTeamName: botTeamName,
+    homeSquad: player.squad,
+    awaySquad: botSquad,
+    result,
+    seed,
+    currentMinute: 0,
+    maxMinute,
+    isBotMatch: true,
+  };
+
+  activeMatches.set(matchId, match);
+  walletToMatch.set(player.wallet, matchId);
+
+  const playerSocket = io.sockets.sockets.get(player.socketId);
+  playerSocket?.emit("match_found", {
+    matchId,
+    side: "home",
+    opponent: {
+      wallet: "__BOT__",
+      teamName: botTeamName,
+    },
+    homeTeamName: player.teamName,
+    awayTeamName: botTeamName,
+    vsBot: true,
+  });
+
+  console.log(
+    `[BOT] Match started: ${player.wallet.slice(0, 8)} vs ${botTeamName} (${matchId}) predetermined=${desiredOutcome} final=${result.homeScore}-${result.awayScore}`
+  );
+
+  // Pre-match delay, then start streaming events
+  setTimeout(() => {
+    streamMatchEvents(io, match);
+  }, 3000);
+}
+
+async function finishBotMatch(io: Server, match: ActiveMatch) {
+  const { result } = match;
+  const isDraw = result.homeScore === result.awayScore;
+  const playerWon = result.homeScore > result.awayScore;
+  const prizePot = MATCH_ENTRY_FEE_CUP * 2;
+
+  let payoutTx: string | undefined;
+  let playerPrizeCup = 0;
+
+  try {
+    // ── Prize / refund ─────────────────────────────────────────
+    if (isDraw) {
+      console.log(
+        `[BOT] Draw — refunding ${match.homeWallet.slice(0, 8)} ${MATCH_ENTRY_FEE_CUP} $CUP`
+      );
+      const refund = await sendPayout(match.homeWallet, MATCH_ENTRY_FEE_CUP);
+      if (refund.success) {
+        payoutTx = refund.signature;
+        playerPrizeCup = MATCH_ENTRY_FEE_CUP;
+      } else {
+        console.error(`[BOT] DRAW REFUND FAILED: ${refund.error}`);
+      }
+    } else if (playerWon) {
+      console.log(
+        `[BOT] Player won — paying ${match.homeWallet.slice(0, 8)} ${prizePot} $CUP`
+      );
+      const payout = await sendPayout(match.homeWallet, prizePot);
+      if (payout.success) {
+        payoutTx = payout.signature;
+        playerPrizeCup = prizePot;
+      } else {
+        console.error(`[BOT] PAYOUT FAILED: ${payout.error}`);
+      }
+    } else {
+      console.log(`[BOT] Player lost — no payout`);
+    }
+
+    // ── XP only (no ELO / leaderboard — prevents bot farming) ──
+    const xpGain = playerWon ? 30 : isDraw ? 15 : 5;
+    const pointsEarned = playerWon ? 3 : isDraw ? 1 : 0;
+
+    const { data: user } = await supabase
+      .from("users")
+      .select("xp")
+      .eq("id", match.homeUserId)
+      .single();
+    if (user) {
+      await supabase
+        .from("users")
+        .update({ xp: (user.xp || 0) + xpGain })
+        .eq("id", match.homeUserId);
+    }
+
+    // ── Notify the player ─────────────────────────────────────
+    const playerSocket = io.sockets.sockets.get(match.homeSocketId);
+    playerSocket?.emit("match_finished", {
+      matchId: match.matchId,
+      result: {
+        homeScore: result.homeScore,
+        awayScore: result.awayScore,
+        possession: result.possession,
+        shots: result.shots,
+        shotsOnTarget: result.shotsOnTarget,
+        manOfTheMatch: result.manOfTheMatch,
+      },
+      pointsEarned,
+      eloChange: 0, // bot matches don't affect ELO
+      xpGain,
+      prizeCup: playerPrizeCup,
+      payoutTx,
+      entryFeeCup: MATCH_ENTRY_FEE_CUP,
+      vsBot: true,
+    });
+
+    console.log(
+      `[BOT] Match finished: ${result.homeScore}-${result.awayScore} prize=${playerPrizeCup} (${match.matchId})`
+    );
+  } catch (err) {
+    console.error("[BOT] finishBotMatch error:", err);
+  }
+
+  // Cleanup
+  activeMatches.delete(match.matchId);
+  walletToMatch.delete(match.homeWallet);
+}
