@@ -854,12 +854,14 @@ async function finishBotMatch(io: Server, match: ActiveMatch) {
     }
 
     // ── ELO + XP ──────────────────────────────────────────────
-    //   Win  → +16 ELO (fair-match gain vs equal-rated opponent)
-    //   Draw → +5  ELO (honorable-draw bonus)
-    //   Loss →  0  ELO (no penalty — player was forced into bot fallback)
+    //   Bot matches grant a much smaller ELO share than real PvP
+    //   so the ladder stays meaningful:
+    //     Win  → +3 ELO   (PvP win would be ~+16)
+    //     Draw → +1 ELO   (PvP draw is ~0)
+    //     Loss →  0 ELO   (no penalty — player was routed to bot)
     const xpGain = playerWon ? 30 : isDraw ? 15 : 5;
     const pointsEarned = playerWon ? 3 : isDraw ? 1 : 0;
-    const eloChange = playerWon ? 16 : isDraw ? 5 : 0;
+    const eloChange = playerWon ? 3 : isDraw ? 1 : 0;
 
     const { data: user } = await supabase
       .from("users")
