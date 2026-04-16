@@ -49,12 +49,15 @@ router.post("/list", async (req: Request, res: Response) => {
 
     await supabase.from("user_agents").update({ is_listed: true }).eq("id", userAgentId);
 
+    // 7-day listing window — the earlier 24h TTL was auto-expiring listings
+    // before sellers had a realistic chance to find a buyer.
+    const LISTING_TTL_MS = 7 * 24 * 60 * 60 * 1000;
     const { data, error } = await supabase.from("listings").insert({
       user_agent_id: userAgentId,
       seller_wallet: walletAddress,
       price_cup: priceCup,
       listing_type: listingType || "fixed",
-      expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      expires_at: new Date(Date.now() + LISTING_TTL_MS).toISOString(),
     }).select().single();
 
     if (error) throw error;
