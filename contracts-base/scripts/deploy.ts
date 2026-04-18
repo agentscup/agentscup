@@ -1,4 +1,6 @@
 import { ethers, network, run } from "hardhat";
+import * as fs from "fs";
+import * as path from "path";
 
 /**
  * Deploy AgentsCupPackStore + AgentsCupMarketplace to the configured
@@ -56,8 +58,7 @@ async function main() {
   console.log(`  AgentsCupMatchEscrow @ ${escrowAddress}`);
   console.log(`    default entry fee: 0.001 ETH (adjustable via setEntryFee)`);
 
-  console.log("\n=== Summary ===");
-  console.log(JSON.stringify({
+  const deployment = {
     network: network.name,
     chainId: network.config.chainId,
     deployer: deployerAddress,
@@ -67,7 +68,18 @@ async function main() {
       AgentsCupMatchEscrow: escrowAddress,
     },
     config: { treasury, admin, feeBps, matchEntryFee: "0.001 ETH" },
-  }, null, 2));
+    deployedAt: new Date().toISOString(),
+  };
+
+  console.log("\n=== Summary ===");
+  console.log(JSON.stringify(deployment, null, 2));
+
+  // Persist so backend / frontend can read the freshly-deployed addresses.
+  const outDir = path.join(__dirname, "..", "deployments");
+  if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
+  const outFile = path.join(outDir, `${network.name}.json`);
+  fs.writeFileSync(outFile, JSON.stringify(deployment, null, 2));
+  console.log(`\nAddresses written to ${outFile}`);
 
   // Optional: auto-verify on Basescan if API key is set
   if (process.env.BASESCAN_API_KEY && network.name !== "localhost" && network.name !== "hardhat") {
