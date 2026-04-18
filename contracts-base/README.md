@@ -10,6 +10,7 @@ with native ETH payments on Base.
 | ----------------------- | ------------------------------------------------------------------------------------------- |
 | `AgentsCupPackStore`    | Accepts ETH for pack purchases, forwards to treasury, emits `PackPurchased`.                |
 | `AgentsCupMarketplace`  | Lists/buys/cancels agents in native ETH. Splits payment to seller + treasury fee (bps).     |
+| `AgentsCupMatchEscrow`  | Holds 0.001 ETH per-player match entry, pays winner / refunds on draw. Admin-tunable fee.   |
 
 Agents themselves remain off-chain Supabase rows (same as the Solana
 flow today). These contracts are the **payment + event rail** the
@@ -39,12 +40,14 @@ backend listens to for crediting/transferring agents.
 contracts-base/
 ├── contracts/
 │   ├── AgentsCupPackStore.sol
-│   └── AgentsCupMarketplace.sol
+│   ├── AgentsCupMarketplace.sol
+│   └── AgentsCupMatchEscrow.sol
 ├── scripts/
 │   └── deploy.ts
 ├── test/
 │   ├── PackStore.test.ts
-│   └── Marketplace.test.ts
+│   ├── Marketplace.test.ts
+│   └── MatchEscrow.test.ts
 ├── hardhat.config.ts
 ├── tsconfig.json
 ├── package.json
@@ -78,13 +81,14 @@ npm run deploy:base
 Status after this session: **contracts drafted + unit-tested**, not yet
 deployed. Frontend + backend integration still pending.
 
-### Phase 1 — contracts ✅ (this commit)
+### Phase 1 — contracts ✅
 
 - [x] Scaffold Hardhat workspace
 - [x] `AgentsCupPackStore` (ETH payable)
 - [x] `AgentsCupMarketplace` (ETH payable, bps fee)
+- [x] `AgentsCupMatchEscrow` (0.001 ETH entry, winner-takes-all, draw refunds)
 - [x] Deployment script for local / Base Sepolia / Base mainnet
-- [x] 13 unit tests pass
+- [x] Unit tests pass across all three contracts
 
 ### Phase 2 — integration (next)
 
@@ -118,19 +122,12 @@ deployed. Frontend + backend integration still pending.
 
 ## Open questions
 
-1. **Match entry fees.** Currently 100k $CUP. With ETH, a realistic entry
-   is something like 0.0001–0.0005 ETH, but that adds two on-chain txs
-   (deposit + settle) per match — noticeable gas even on Base. Options:
-   - Keep on-chain escrow in ETH (old `AgentsCupMatchEscrow` sketch
-     exists in git history if we want it back)
-   - Drop match entry fees entirely (free matches)
-   - Keep entry fee off-chain only (backend ledger, no contract)
-   Needs a product call before wiring up.
+1. **Pack prices in ETH.** What's the price ladder? Previously 10k /
+   50k / 150k $CUP. Lives entirely in the backend so no redeploy needed
+   — we just need a product call on the numbers.
 
-2. **Pack prices in ETH.** What's the price ladder? Previously 10k /
-   50k / 150k $CUP. At current ETH price the equivalents are tiny — we
-   probably want a fresh price curve. Lives entirely in the backend
-   so no redeploy needed.
-
-3. **Marketplace fee bps.** Default set to 250 (2.5%). Change via
+2. **Marketplace fee bps.** Default set to 250 (2.5%). Change via
    `setFeeBps` any time; capped at 5%.
+
+3. **Match entry fee.** Set to 0.001 ETH on deploy; admin can tune via
+   `setEntryFee` without redeploying.

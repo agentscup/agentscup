@@ -47,6 +47,15 @@ async function main() {
   const marketplaceAddress = await marketplace.getAddress();
   console.log(`  AgentsCupMarketplace @ ${marketplaceAddress}`);
 
+  // ── AgentsCupMatchEscrow ─────────────────────────────────────────
+  console.log("Deploying AgentsCupMatchEscrow...");
+  const Escrow = await ethers.getContractFactory("AgentsCupMatchEscrow");
+  const escrow = await Escrow.deploy(admin);
+  await escrow.waitForDeployment();
+  const escrowAddress = await escrow.getAddress();
+  console.log(`  AgentsCupMatchEscrow @ ${escrowAddress}`);
+  console.log(`    default entry fee: 0.001 ETH (adjustable via setEntryFee)`);
+
   console.log("\n=== Summary ===");
   console.log(JSON.stringify({
     network: network.name,
@@ -55,8 +64,9 @@ async function main() {
     contracts: {
       AgentsCupPackStore: packStoreAddress,
       AgentsCupMarketplace: marketplaceAddress,
+      AgentsCupMatchEscrow: escrowAddress,
     },
-    config: { treasury, admin, feeBps },
+    config: { treasury, admin, feeBps, matchEntryFee: "0.001 ETH" },
   }, null, 2));
 
   // Optional: auto-verify on Basescan if API key is set
@@ -70,6 +80,10 @@ async function main() {
       await run("verify:verify", {
         address: marketplaceAddress,
         constructorArguments: [treasury, feeBps, admin],
+      });
+      await run("verify:verify", {
+        address: escrowAddress,
+        constructorArguments: [admin],
       });
       console.log("Verification complete.");
     } catch (e: unknown) {
