@@ -1,10 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import Image from "next/image";
 
 interface Props {
   onStart: () => void;
+  /** When OAuth is live, caller passes the real <SignInWithX /> button
+   *  here to take over the golden CTA slot. Falls back to the local
+   *  handle-input flow (via `onStart`) if null/undefined. */
+  signInWith?: ReactNode | null;
 }
 
 /**
@@ -14,7 +18,7 @@ interface Props {
  * what the next screen is for. The job of this screen is a strong
  * visual hook and a zero-friction start.
  */
-export default function LandingHero({ onStart }: Props) {
+export default function LandingHero({ onStart, signInWith }: Props) {
   const [claimed, setClaimed] = useState<number | null>(null);
 
   useEffect(() => {
@@ -60,37 +64,39 @@ export default function LandingHero({ onStart }: Props) {
         Complete simple tasks to roll a rarer pull.
       </p>
 
-      <button
-        onClick={onStart}
-        className="group relative font-pixel text-[10px] sm:text-[12px] tracking-[0.3em] overflow-hidden"
-        style={{
-          padding: "18px 48px",
-          background: "linear-gradient(180deg, #FFD700 0%, #B8960C 100%)",
-          color: "#1a1200",
-          border: "4px solid #FFF4B0",
-          boxShadow:
-            "inset -4px -4px 0 #8a6f00, inset 4px 4px 0 #FFF4B0, 0 6px 0 #5a4500, 8px 8px 0 rgba(0,0,0,0.6)",
-          textShadow: "1px 1px 0 #FFF4B0",
-          imageRendering: "pixelated",
-          transform: "translateY(0)",
-          transition: "transform 120ms ease-out",
-        }}
-        onMouseDown={(e) => (e.currentTarget.style.transform = "translateY(4px)")}
-        onMouseUp={(e) => (e.currentTarget.style.transform = "translateY(0)")}
-        onMouseLeave={(e) => (e.currentTarget.style.transform = "translateY(0)")}
-      >
-        <span
-          aria-hidden
-          className="absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity"
+      {signInWith ?? (
+        <button
+          onClick={onStart}
+          className="group relative font-pixel text-[10px] sm:text-[12px] tracking-[0.3em] overflow-hidden"
           style={{
-            background:
-              "linear-gradient(135deg, transparent 40%, rgba(255,255,255,0.5) 50%, transparent 60%)",
-            backgroundSize: "200% 200%",
-            animation: "btn-shine 1.2s linear infinite",
+            padding: "18px 48px",
+            background: "linear-gradient(180deg, #FFD700 0%, #B8960C 100%)",
+            color: "#1a1200",
+            border: "4px solid #FFF4B0",
+            boxShadow:
+              "inset -4px -4px 0 #8a6f00, inset 4px 4px 0 #FFF4B0, 0 6px 0 #5a4500, 8px 8px 0 rgba(0,0,0,0.6)",
+            textShadow: "1px 1px 0 #FFF4B0",
+            imageRendering: "pixelated",
+            transform: "translateY(0)",
+            transition: "transform 120ms ease-out",
           }}
-        />
-        <span className="relative">CONNECT WITH X ↗</span>
-      </button>
+          onMouseDown={(e) => (e.currentTarget.style.transform = "translateY(4px)")}
+          onMouseUp={(e) => (e.currentTarget.style.transform = "translateY(0)")}
+          onMouseLeave={(e) => (e.currentTarget.style.transform = "translateY(0)")}
+        >
+          <span
+            aria-hidden
+            className="absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity"
+            style={{
+              background:
+                "linear-gradient(135deg, transparent 40%, rgba(255,255,255,0.5) 50%, transparent 60%)",
+              backgroundSize: "200% 200%",
+              animation: "btn-shine 1.2s linear infinite",
+            }}
+          />
+          <span className="relative">CONNECT WITH X ↗</span>
+        </button>
+      )}
 
       <p className="mt-6 font-pixel text-[7px] text-white/30 tracking-[0.3em]">
         FREE · ONE CARD PER X ACCOUNT · 60 SECONDS

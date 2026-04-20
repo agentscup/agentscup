@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { getTweetById, tweetIdFromUrl } from "@/lib/earlyAccess/xApi";
+import { auth } from "@/auth";
 
 /**
  * POST /api/early-access/claim
@@ -57,6 +59,51 @@ export async function POST(req: Request) {
       { error: "Tweet author does not match your handle" },
       { status: 400 }
     );
+  }
+
+  // Real tweet verification when OAuth + Bearer Token are configured.
+  //   1. Fetch the tweet via X API v2.
+  //   2. Confirm `author_id` matches the signed-in X user id.
+  //   3. Confirm the tweet body contains our share URL.
+  // Falls through to trust-based claim when no session exists (pre-
+  // OAuth rollout / mock-handle path).
+  const session = await auth();
+  const xUserId = (session as typeof session & { xUserId?: string })?.xUserId;
+
+  if (xUserId && process.env.X_BEARER_TOKEN) {
+    const tweetId = tweetIdFromUrl(tweetUrl);
+    if (!tweetId) {
+      return NextResponse.json({ error: "Unable to parse tweet id" }, { status: 400 });
+    }
+    try {
+      const tweet = await getTweetById(tweetId);
+      if (tweet.author_id !== xUserId) {
+        return NextResponse.json(
+          { error: "This tweet belongs to a different account" },
+          { status: 400 }
+        );
+      }
+      // Share URL must appear somewhere in the tweet body. We compare
+      // on lowercase and only match the path so Twitter's t.co
+      // wrappers don't trip the check.
+      const origin =
+        req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? "";
+      const needle = `/early-access/card/${handle}`.toLowerCase();
+      if (
+        !tweet.text.toLowerCase().includes(needle) &&
+        (!origin || !tweet.text.toLowerCase().includes(origin.toLowerCase()))
+      ) {
+        return NextResponse.json(
+          { error: "Tweet is missing your share link — post the prefilled text" },
+          { status: 400 }
+        );
+      }
+    } catch (err) {
+      return NextResponse.json(
+        { error: err instanceof Error ? err.message : "Tweet lookup failed" },
+        { status: 400 }
+      );
+    }
   }
 
   const supabase = createClient(url, key, { auth: { persistSession: false } });
