@@ -1,5 +1,6 @@
 import NextAuth from "next-auth";
 import Twitter from "next-auth/providers/twitter";
+import type { Provider } from "next-auth/providers";
 
 /**
  * Auth.js (NextAuth v5) config.
@@ -21,8 +22,14 @@ import Twitter from "next-auth/providers/twitter";
  * the first request — we keep the config valid-but-stubby so the
  * early-access page still loads during the pre-OAuth rollout.
  */
-export const { handlers, signIn, signOut, auth } = NextAuth({
-  providers: [
+// Only register Twitter when both halves of the OAuth credential are
+// actually configured. This keeps the /api/auth/providers probe from
+// reporting a broken provider during the pre-keys rollout — the
+// frontend falls back to the handle-input flow when it sees no
+// provider listed.
+const providers: Provider[] = [];
+if (process.env.X_CLIENT_ID && process.env.X_CLIENT_SECRET) {
+  providers.push(
     Twitter({
       clientId: process.env.X_CLIENT_ID,
       clientSecret: process.env.X_CLIENT_SECRET,
@@ -31,8 +38,12 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           scope: "users.read tweet.read follows.read offline.access",
         },
       },
-    }),
-  ],
+    })
+  );
+}
+
+export const { handlers, signIn, signOut, auth } = NextAuth({
+  providers,
   session: { strategy: "jwt" },
   callbacks: {
     async jwt({ token, account, profile }) {
