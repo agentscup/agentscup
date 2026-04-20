@@ -12,8 +12,11 @@ const MAINTENANCE_MODE = process.env.NEXT_PUBLIC_MAINTENANCE_MODE === "true";
 /**
  * Routes that stay reachable even while MAINTENANCE_MODE is on. Keep
  * this list tight — each entry is a prefix-match on the URL path.
+ * `/early` is the public vanity path that rewrites to `/early-access`
+ * via next.config; we need to accept both because the middleware that
+ * tags x-pathname runs before the rewrite resolves.
  */
-const MAINTENANCE_BYPASS_PREFIXES = ["/early-access"];
+const MAINTENANCE_BYPASS_PREFIXES = ["/early-access", "/early"];
 
 const pressStart = Press_Start_2P({
   weight: "400",
