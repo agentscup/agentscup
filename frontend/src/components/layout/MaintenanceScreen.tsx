@@ -85,14 +85,6 @@ export default function MaintenanceScreen() {
           >
             X / TWITTER ↗
           </a>
-          <a
-            href="https://pump.fun/coin/FjZvB6k9jCWDBUsgXRxJUByrqWHADQJigXK233b5pump"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hover:text-[#FFD700] transition-colors"
-          >
-            $CUP TOKEN ↗
-          </a>
         </div>
       </div>
     </div>
