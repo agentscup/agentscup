@@ -1,80 +1,75 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { FounderCard as FounderCardT } from "@/lib/earlyAccess/cardGen";
 
 interface Props {
   card: FounderCardT;
-  /** Public, shareable URL that renders the card with OG meta. */
+  /** Public, shareable URL for the card preview. */
   shareUrl: string;
-  /** Called after the user confirms they've shared. */
+  /** Called once the user has shared and confirmed. */
   onClaimed: (tweetUrl: string) => Promise<void>;
 }
 
+type Phase = "idle" | "posted" | "claiming" | "error";
+
 /**
- * Post-reveal screen. Pushes the user to X via the web intent, then
- * collects the resulting tweet URL for trust-based claim verification.
+ * Tight two-step share: tap a big button that opens X with the tweet
+ * pre-filled, wait a few seconds for them to actually post it, then
+ * paste the URL (or just confirm) to lock in the claim.
  *
- * Upgrade path: once the backend has a Twitter API bearer token,
- * replace `onClaimed` with a server-side lookup that confirms the
- * tweet exists, was posted by the authenticated user, and contains
- * the share URL.
+ * Trust-based by default; the claim endpoint does an author-match on
+ * the pasted URL. Once the Twitter API key lands, server will also
+ * fetch the tweet and confirm the share URL is in the body.
  */
 export default function ShareClaim({ card, shareUrl, onClaimed }: Props) {
+  const [phase, setPhase] = useState<Phase>("idle");
   const [tweetUrl, setTweetUrl] = useState("");
-  const [claiming, setClaiming] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState(false);
+  const [cooldown, setCooldown] = useState<number | null>(null);
 
-  const intentUrl = useMemo(() => {
-    const text = buildShareText(card, shareUrl);
-    return `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`;
-  }, [card, shareUrl]);
+  const intentUrl = useMemo(
+    () => `https://twitter.com/intent/tweet?text=${encodeURIComponent(buildText(card, shareUrl))}`,
+    [card, shareUrl]
+  );
 
-  async function submit(e: React.FormEvent) {
+  // Gentle cooldown after the user clicks "Open X" — keeps them from
+  // hitting "Claim" before the tweet is actually up.
+  useEffect(() => {
+    if (cooldown == null) return;
+    if (cooldown <= 0) {
+      setCooldown(null);
+      return;
+    }
+    const t = setTimeout(() => setCooldown((c) => (c == null ? null : c - 1)), 1000);
+    return () => clearTimeout(t);
+  }, [cooldown]);
+
+  function openX() {
+    window.open(intentUrl, "_blank", "noopener,noreferrer");
+    setPhase("posted");
+    setCooldown(6);
+  }
+
+  async function claim(e: React.FormEvent) {
     e.preventDefault();
-    const clean = tweetUrl.trim();
-    if (!isLikelyTweetUrl(clean)) {
+    const trimmed = tweetUrl.trim();
+    if (trimmed && !isTweetUrl(trimmed)) {
       setError("That doesn't look like a tweet URL.");
       return;
     }
     setError(null);
-    setClaiming(true);
+    setPhase("claiming");
     try {
-      await onClaimed(clean);
-      setDone(true);
+      await onClaimed(trimmed);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Claim failed");
-    } finally {
-      setClaiming(false);
+      setPhase("posted");
     }
   }
 
-  if (done) {
-    return (
-      <div className="max-w-md mx-auto w-full text-center">
-        <div
-          className="inline-block px-4 py-2 mb-6 font-pixel text-[10px] tracking-[0.3em]"
-          style={{
-            background: "#1a1200",
-            color: "#FFD700",
-            border: "2px solid #FFD700",
-            boxShadow:
-              "inset -2px -2px 0 #8a6f00, inset 2px 2px 0 #FFF4B0, 3px 3px 0 rgba(0,0,0,0.5)",
-          }}
-        >
-          ✓ SPOT RESERVED
-        </div>
-        <p className="text-[12px] sm:text-sm text-white/70 leading-relaxed">
-          Your card is claimed. We&apos;ll ping your @{card.handle} on X
-          when Agents Cup goes live on Base.
-        </p>
-      </div>
-    );
-  }
-
   return (
-    <div className="max-w-md mx-auto w-full">
+    <div className="max-w-md mx-auto w-full animate-[fade-up_0.4s_ease-out]">
       <div
         className="p-6 sm:p-8"
         style={{
@@ -84,76 +79,114 @@ export default function ShareClaim({ card, shareUrl, onClaimed }: Props) {
             "inset -3px -3px 0 #0B6623, inset 3px 3px 0 #2eb060, 6px 6px 0 rgba(0,0,0,0.5)",
         }}
       >
-        <h2 className="font-pixel text-[10px] sm:text-xs text-white text-center mb-3 tracking-wider"
+        <h2
+          className="font-pixel text-[10px] sm:text-xs text-white text-center mb-2 tracking-wider"
           style={{ textShadow: "2px 2px 0 #0B6623" }}
         >
-          STEP 2 — SHARE TO CLAIM
+          SHARE TO CLAIM YOUR SPOT
         </h2>
-        <p className="text-[11px] sm:text-sm text-white/60 text-center mb-6 leading-relaxed">
-          Post your card on X. Once it&apos;s live, paste the tweet URL
-          below and your spot is locked in.
+        <p className="text-[12px] sm:text-sm text-white/60 text-center mb-6 leading-relaxed">
+          Post your card on X and you&apos;re in. Takes 15 seconds.
         </p>
 
-        <a
-          href={intentUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="block w-full text-center pixel-btn text-[10px] py-3 mb-4"
+        <button
+          onClick={openX}
+          className="group w-full relative overflow-hidden font-pixel text-[10px] sm:text-[11px] tracking-[0.25em]"
+          style={{
+            padding: "16px 20px",
+            background: "linear-gradient(180deg, #1DA1F2 0%, #0d7dc0 100%)",
+            color: "#fff",
+            border: "3px solid #7fcfff",
+            boxShadow:
+              "inset -3px -3px 0 #004870, inset 3px 3px 0 #7fcfff, 4px 4px 0 rgba(0,0,0,0.6)",
+            textShadow: "1px 1px 0 #004870",
+          }}
         >
-          OPEN X TO POST ↗
-        </a>
+          <span
+            aria-hidden
+            className="absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity"
+            style={{
+              background:
+                "linear-gradient(135deg, transparent 40%, rgba(255,255,255,0.4) 50%, transparent 60%)",
+              backgroundSize: "200% 200%",
+              animation: "shine 1.2s linear infinite",
+            }}
+          />
+          <span className="relative">
+            {phase === "idle" ? "POST ON X ↗" : "REOPEN X ↗"}
+          </span>
+        </button>
 
-        <form onSubmit={submit} className="space-y-3">
-          <label className="block">
-            <span className="font-pixel text-[7px] text-white/60 tracking-wider block mb-2">
-              PASTE TWEET URL
-            </span>
-            <input
-              type="url"
-              value={tweetUrl}
-              onChange={(e) => setTweetUrl(e.target.value)}
-              placeholder="https://x.com/yourhandle/status/..."
-              className="w-full font-pixel text-[10px] px-3 py-2 outline-none"
-              style={{
-                background: "#000",
-                border: "2px solid #1E8F4E",
-                color: "#fff",
-                imageRendering: "pixelated",
-              }}
-              autoComplete="off"
-              spellCheck={false}
-            />
-          </label>
+        {phase !== "idle" && (
+          <form onSubmit={claim} className="mt-5 space-y-3 animate-[fade-up_0.3s_ease-out]">
+            <label className="block">
+              <span className="font-pixel text-[7px] text-white/60 tracking-wider block mb-2">
+                TWEET URL (OPTIONAL)
+              </span>
+              <input
+                type="url"
+                value={tweetUrl}
+                onChange={(e) => setTweetUrl(e.target.value)}
+                placeholder="https://x.com/you/status/…"
+                className="w-full font-pixel text-[10px] px-3 py-2 outline-none"
+                style={{
+                  background: "#000",
+                  border: "2px solid #1E8F4E",
+                  color: "#fff",
+                  imageRendering: "pixelated",
+                }}
+                autoComplete="off"
+                spellCheck={false}
+              />
+            </label>
 
-          {error && (
-            <div className="font-pixel text-[8px] text-red-400 tracking-wider">
-              {error}
-            </div>
-          )}
+            {error && (
+              <div className="font-pixel text-[8px] text-red-400 tracking-wider">
+                {error}
+              </div>
+            )}
 
-          <button
-            type="submit"
-            disabled={claiming}
-            className="w-full pixel-btn-outline text-[9px] py-3 disabled:opacity-40"
-          >
-            {claiming ? "CLAIMING…" : "CLAIM EARLY ACCESS"}
-          </button>
-        </form>
+            <button
+              type="submit"
+              disabled={phase === "claiming" || cooldown !== null}
+              className="w-full pixel-btn-outline text-[9px] py-3 disabled:opacity-40"
+            >
+              {phase === "claiming"
+                ? "CLAIMING…"
+                : cooldown != null
+                ? `WAIT ${cooldown}S…`
+                : "I POSTED IT — CLAIM"}
+            </button>
+          </form>
+        )}
       </div>
+
+      <style jsx>{`
+        @keyframes shine {
+          0%   { background-position: 200% 200%; }
+          100% { background-position: -200% -200%; }
+        }
+        @keyframes fade-up {
+          from { opacity: 0; transform: translateY(8px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
     </div>
   );
 }
 
-function buildShareText(card: { rarity: string; overall: number; handle: string }, url: string) {
-  const lines = [
-    `I just pulled a ${card.rarity} Founder Card (OVR ${card.overall}) for @AgentsCup on @base.`,
+function buildText(
+  card: { rarity: string; overall: number },
+  url: string
+): string {
+  return [
+    `I just pulled a ${card.rarity} Founder Card (OVR ${card.overall}) for @agentscup 🏆`,
     "",
-    "Claim yours — early access is open:",
+    "Claim yours on @base 👇",
     url,
-  ];
-  return lines.join("\n");
+  ].join("\n");
 }
 
-function isLikelyTweetUrl(url: string): boolean {
+function isTweetUrl(url: string): boolean {
   return /^https?:\/\/(?:www\.)?(?:twitter|x)\.com\/[^/]+\/status\/\d+/.test(url);
 }
