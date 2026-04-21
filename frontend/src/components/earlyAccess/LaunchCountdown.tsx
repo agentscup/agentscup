@@ -3,45 +3,49 @@
 import { useEffect, useState } from "react";
 
 /**
- * Target launch timestamp, ISO-8601. Overridable via
- * `NEXT_PUBLIC_LAUNCH_AT` in Vercel (build-time constant) so we can
- * shift the date without a code change. Default lands 24 hours after
- * the current preview so copy reads "24:00 HOURS" out of the box.
+ * Target launch timestamp, ISO-8601 UTC.
+ *
+ * Fixed: 22 April 2026, 19:00 Turkey time (UTC+3) → 16:00 UTC.
+ * Overridable via `NEXT_PUBLIC_LAUNCH_AT` in Vercel if the schedule
+ * shifts without wanting to redeploy on a code change.
  */
-const DEFAULT_LAUNCH_AT = "2026-04-22T18:00:00Z";
+const DEFAULT_LAUNCH_AT = "2026-04-22T16:00:00Z";
 const LAUNCH_AT_ISO =
   process.env.NEXT_PUBLIC_LAUNCH_AT?.trim() || DEFAULT_LAUNCH_AT;
 
 /**
- * Returns the countdown string in `HH:MM` form, where HH may exceed
- * 24 if launch is more than a day out. Shows `00:00` once the
+ * Returns the countdown in `HH:MM:SS` form, where HH may exceed 24
+ * if launch is more than a day out. Shows `00:00:00` once the
  * deadline has passed.
  *
- * Re-renders every 10 seconds — plenty for a minute-granularity
- * display, cheap enough that thousands of mounted banners won't
- * meaningfully touch the main thread.
+ * Re-renders every second so the seconds digit ticks visibly — the
+ * extra interval work is trivial (the banner only mounts on the
+ * claimed screen, one per tab). Uses `tabular-nums` on the label
+ * so the digits don't jitter as they change.
  */
 export function useLaunchCountdown() {
   const targetMs = Date.parse(LAUNCH_AT_ISO);
 
   const [tick, setTick] = useState(0);
   useEffect(() => {
-    const id = setInterval(() => setTick((t) => t + 1), 10_000);
+    const id = setInterval(() => setTick((t) => t + 1), 1000);
     return () => clearInterval(id);
   }, []);
   // `tick` is a no-op dep; we just need the hook to re-run.
   void tick;
 
   const ms = Math.max(0, targetMs - Date.now());
-  const totalMinutes = Math.floor(ms / 60_000);
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
+  const totalSeconds = Math.floor(ms / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
 
   return {
     past: ms === 0,
     hours,
     minutes,
-    label: `${pad(hours)}:${pad(minutes)}`,
+    seconds,
+    label: `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`,
   };
 }
 
@@ -77,11 +81,13 @@ export default function LaunchCountdownBadge() {
           SEE YOU IN{" "}
           <span
             className="tabular-nums"
-            style={{ color: "#FFF4B0" }}
+            style={{
+              color: "#FFF4B0",
+              fontVariantNumeric: "tabular-nums",
+            }}
           >
             {label}
-          </span>{" "}
-          HOURS
+          </span>
         </span>
       )}
     </div>
