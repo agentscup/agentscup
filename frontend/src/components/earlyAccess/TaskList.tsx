@@ -1,12 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import type { Rarity } from "@/lib/earlyAccess/cardGen";
-import {
-  scoreToRarity,
-  followerTierBonus,
-  MAX_RARITY_SCORE,
-} from "@/lib/earlyAccess/cardGen";
+import { useEffect, useState } from "react";
 
 export interface TaskState {
   notificationsOn: boolean;
@@ -38,17 +32,6 @@ interface Props {
   tasks: TaskState;
   onTaskComplete: (task: keyof TaskState) => void;
   onReveal: () => void;
-  /** Deterministic jitter for the handle (0-10) — shown in the meter
-      so the preview matches the real rarity roll. */
-  handleJitter: number;
-  /** Live X follower count for the signed-in account (or 0 while in
-      mock mode). The biggest slice of the rarity meter. */
-  followerCount?: number;
-  /** Days since the X account was created — +5 pts if ≥ 365. */
-  accountAgeDays?: number;
-  /** True if the user's X bio mentions "base" / "basechain" — cheap
-      Base-engagement bonus computed at OAuth time. */
-  bioMentionsBase?: boolean;
 }
 
 interface TaskDef {
@@ -94,26 +77,10 @@ export default function TaskList({
   tasks,
   onTaskComplete,
   onReveal,
-  handleJitter,
-  followerCount,
-  accountAgeDays,
-  bioMentionsBase,
 }: Props) {
-  // Rarity is entirely account-driven — tasks gate the REVEAL
-  // button but do not add points, per the launch rubric. The
-  // predicted tier the user sees here equals the card they pull.
-  const followerTier = useMemo(
-    () => followerTierBonus(followerCount),
-    [followerCount]
-  );
-  const ageBonus = (accountAgeDays ?? 0) >= 365 ? 5 : 0;
-  const baseBio = bioMentionsBase ? 10 : 0;
-
-  const score = handleJitter + followerTier.points + ageBonus + baseBio;
-  const rarity = scoreToRarity(score);
-  // Size against the full theoretical max so tier markers at
-  // 30 / 60 / 90 land in their correct proportional slots.
-  const maxScore = MAX_RARITY_SCORE;
+  // Rarity is entirely account-driven — tasks gate the REVEAL button
+  // but do not add points. We no longer surface a live preview on
+  // this screen; the reveal itself is where the rarity reveal lives.
 
   const tasksDone = TASKS.every((t) => tasks[t.key]);
   const remaining = TASKS.filter((t) => !tasks[t.key]).length;
@@ -132,16 +99,7 @@ export default function TaskList({
         </div>
       </div>
 
-      <RarityMeter
-        score={score}
-        rarity={rarity}
-        maxScore={maxScore}
-        followerTier={followerTier}
-        followerCount={followerCount}
-        baseBioBonus={baseBio}
-      />
-
-      <div className="mt-8 space-y-2.5">
+      <div className="mt-2 space-y-2.5">
         {TASKS.map((t, i) => (
           <TaskRow
             key={t.key}
@@ -284,168 +242,3 @@ function TaskRow({
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────
-// Rarity meter
-// ─────────────────────────────────────────────────────────────────────
-
-const RARITY_COLORS: Record<Rarity, string> = {
-  COMMON: "#9abd9a",
-  RARE: "#00aeef",
-  EPIC: "#b068ff",
-  LEGENDARY: "#FFD700",
-};
-
-// ─────────────────────────────────────────────────────────────────────
-// Signal strip helper
-// ─────────────────────────────────────────────────────────────────────
-
-function BonusRow({
-  label,
-  detail,
-  points,
-  accent = "#FFD700",
-}: {
-  label: string;
-  detail: string;
-  points: number;
-  accent?: string;
-}) {
-  const active = points > 0;
-  return (
-    <div
-      className="flex items-center justify-between px-3 py-2"
-      style={{
-        background: "rgba(0,0,0,0.35)",
-        borderLeft: `2px solid ${active ? accent : "rgba(255,255,255,0.15)"}`,
-      }}
-    >
-      <div className="flex items-baseline gap-2 min-w-0">
-        <span className="font-pixel text-[7px] text-white/40 tracking-[0.3em] shrink-0">
-          {label}
-        </span>
-        <span className="text-[11px] text-white/60 truncate lowercase">
-          {detail}
-        </span>
-      </div>
-      <span
-        className="font-pixel text-[10px] tracking-[0.15em] shrink-0"
-        style={{ color: active ? accent : "rgba(255,255,255,0.3)" }}
-      >
-        {active ? `+${points}` : "—"}
-      </span>
-    </div>
-  );
-}
-
-function RarityMeter({
-  score,
-  rarity,
-  maxScore,
-  followerTier,
-  followerCount,
-  baseBioBonus,
-}: {
-  score: number;
-  rarity: Rarity;
-  maxScore: number;
-  followerTier: { label: string; points: number };
-  followerCount?: number;
-  baseBioBonus: number;
-}) {
-  const pct = Math.min(100, Math.round((score / Math.max(maxScore, 1)) * 100));
-  const color = RARITY_COLORS[rarity];
-
-  const showFollowerLine = (followerCount ?? 0) > 0 || followerTier.points > 0;
-
-  return (
-    <div className="space-y-3">
-      <div className="flex items-baseline justify-between">
-        <span className="font-pixel text-[7px] text-white/40 tracking-[0.4em]">
-          PREDICTED TIER
-        </span>
-        <span
-          className="font-pixel text-[12px] tracking-[0.3em] transition-colors duration-500"
-          style={{ color, textShadow: `0 0 16px ${color}80` }}
-        >
-          {rarity}
-        </span>
-      </div>
-
-      {/* Signal strip — tells the user up-front which account signals
-          are already working in their favour. Nothing here reacts to
-          the task checklist; it's purely account-driven. */}
-      {showFollowerLine && (
-        <BonusRow
-          label="FOLLOWER TIER"
-          detail={followerTier.label}
-          points={followerTier.points}
-        />
-      )}
-      {baseBioBonus > 0 && (
-        <BonusRow
-          label="BASE ENGAGEMENT"
-          detail="Mentions Base in bio"
-          points={baseBioBonus}
-          accent="#00AEEF"
-        />
-      )}
-
-      <div className="relative">
-        {/* Track */}
-        <div
-          className="h-[6px] overflow-hidden"
-          style={{
-            background: "rgba(255,255,255,0.05)",
-            borderRadius: "1px",
-          }}
-        >
-          <div
-            className="h-full transition-all duration-700"
-            style={{
-              width: `${pct}%`,
-              background: `linear-gradient(90deg, ${color}80 0%, ${color} 100%)`,
-              boxShadow: `0 0 10px ${color}80`,
-              transitionTimingFunction: "cubic-bezier(0.16, 1, 0.3, 1)",
-            }}
-          />
-        </div>
-        {/* Tier ticks above track */}
-        <div className="relative h-3">
-          {[
-            { label: "RARE", at: 30 },
-            { label: "EPIC", at: 60 },
-            { label: "LEGEND", at: 90 },
-          ].map((t) => {
-            const left = Math.min(100, (t.at / maxScore) * 100);
-            const reached = score >= t.at;
-            return (
-              <div
-                key={t.label}
-                className="absolute top-0 -translate-x-1/2 transition-opacity duration-500"
-                style={{
-                  left: `${left}%`,
-                  opacity: reached ? 1 : 0.35,
-                }}
-              >
-                <div
-                  className="w-px h-2 mx-auto"
-                  style={{
-                    background: reached ? color : "rgba(255,255,255,0.2)",
-                  }}
-                />
-                <div
-                  className="font-pixel text-[6px] tracking-[0.15em] mt-1 whitespace-nowrap"
-                  style={{
-                    color: reached ? color : "rgba(255,255,255,0.3)",
-                  }}
-                >
-                  {t.label}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    </div>
-  );
-}

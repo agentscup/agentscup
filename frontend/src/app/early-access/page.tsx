@@ -311,10 +311,6 @@ export default function EarlyAccessPage() {
           <TaskList
             handle={handle}
             tasks={tasks}
-            handleJitter={handleJitter}
-            followerCount={realSignals?.followerCount ?? 0}
-            accountAgeDays={realSignals?.accountAgeDays ?? 0}
-            bioMentionsBase={!!realSignals?.bioMentionsBase}
             onTaskComplete={(k) => setTasks((prev) => ({ ...prev, [k]: true }))}
             onReveal={startReveal}
           />

@@ -62,11 +62,7 @@ export default function LandingHero({ onStart, signInWith }: Props) {
         FOUNDER&nbsp;CARD
       </h1>
 
-      {/* Subtitle */}
-      <p className="text-[13px] sm:text-base text-white/60 max-w-[440px] mx-auto leading-[1.65] mb-12 px-4 font-medium">
-        A one-of-one card minted from your X handle.<br />
-        <span className="text-white/40">Bigger followings pull rarer cards.</span>
-      </p>
+      <div className="h-8" />
 
       {signInWith ?? (
         <button
@@ -100,10 +96,6 @@ export default function LandingHero({ onStart, signInWith }: Props) {
           <span className="relative">CONNECT WITH X</span>
         </button>
       )}
-
-      <p className="mt-8 font-pixel text-[7px] text-white/30 tracking-[0.4em]">
-        FREE  ·  ONE PER ACCOUNT  ·  60 SECONDS
-      </p>
 
       <style jsx>{`
         @keyframes hero-fade {
