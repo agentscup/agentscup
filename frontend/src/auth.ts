@@ -33,7 +33,12 @@ if (process.env.X_CLIENT_ID && process.env.X_CLIENT_SECRET) {
     Twitter({
       clientId: process.env.X_CLIENT_ID,
       clientSecret: process.env.X_CLIENT_SECRET,
+      // Override the whole `authorization` block — Auth.js v5 does a
+      // shallow merge, so setting `authorization.params` alone wipes
+      // out the provider's default `url` and breaks the OAuth start
+      // with an "Invalid URL" error. We restate both explicitly.
       authorization: {
+        url: "https://twitter.com/i/oauth2/authorize",
         params: {
           // Minimum possible X OAuth scope — just enough to prove the
           // user owns the account (we get id + username + avatar).
