@@ -3,88 +3,123 @@ import Twitter from "next-auth/providers/twitter";
 import type { Provider } from "next-auth/providers";
 
 /**
- * Auth.js (NextAuth v5) config.
+ * Auth.js (NextAuth v5) config for X OAuth 2.0 + PKCE.
  *
- * Uses X's OAuth 2.0 + PKCE flow via the built-in Twitter provider.
- * We request the minimum scopes we need — the same ones listed in our
- * X Developer app submission:
+ * The built-in Twitter provider in `@auth/core@beta` silently breaks
+ * when the caller overrides authorization/userinfo/profile because it
+ * shallow-merges the user config on top of its internal defaults —
+ * partial overrides drop required fields and the flow throws
+ * `OAuthProfileParseError` on the callback. We restate every piece
+ * explicitly so the provider stays self-contained.
  *
- *   - users.read   → profile (id, username, avatar, follower_count, created_at)
- *   - tweet.read   → user's own timeline for Base-mention scanning +
- *                    confirming the share tweet during claim
- *   - follows.read → follows/:id/:target check for @base + @agentscup
- *
- * The X numeric user id is carried into the JWT + session so server
- * code can fan out to the X API without re-reading the token store.
- *
- * Environment: reads `X_CLIENT_ID`, `X_CLIENT_SECRET`, and
- * `AUTH_SECRET`. If any is missing at boot, Auth.js throws during
- * the first request — we keep the config valid-but-stubby so the
- * early-access page still loads during the pre-OAuth rollout.
+ * We request only `users.read` — the authorization screen shown to
+ * users reads "See your profile info" with no tweet, follow, or write
+ * access. Any heavy X API reads (follow checks, tweet verification)
+ * run later under the app-only Bearer Token, which doesn't need a
+ * user-granted scope.
  */
-// Only register Twitter when both halves of the OAuth credential are
-// actually configured. This keeps the /api/auth/providers probe from
-// reporting a broken provider during the pre-keys rollout — the
-// frontend falls back to the handle-input flow when it sees no
-// provider listed.
 const providers: Provider[] = [];
+
 if (process.env.X_CLIENT_ID && process.env.X_CLIENT_SECRET) {
   providers.push(
     Twitter({
       clientId: process.env.X_CLIENT_ID,
       clientSecret: process.env.X_CLIENT_SECRET,
-      // Override the whole `authorization` block — Auth.js v5 does a
-      // shallow merge, so setting `authorization.params` alone wipes
-      // out the provider's default `url` and breaks the OAuth start
-      // with an "Invalid URL" error. We restate both explicitly.
       authorization: {
         url: "https://twitter.com/i/oauth2/authorize",
         params: {
-          // Minimum possible X OAuth scope — just enough to prove the
-          // user owns the account (we get id + username + avatar).
-          // No tweet access, no follow list, no posting. Heavy API
-          // reads for the async verifier go through the app-only
-          // Bearer Token, which doesn't need user-granted scopes.
           scope: "users.read",
         },
+      },
+      token: { url: "https://api.twitter.com/2/oauth2/token" },
+      userinfo: {
+        url: "https://api.twitter.com/2/users/me",
+        params: {
+          "user.fields": "id,name,username,profile_image_url",
+        },
+      },
+      profile(raw) {
+        // X API v2 wraps the user payload in `{ data: {...} }`. Some
+        // environments (or future provider updates) can unwrap it
+        // already — accept both shapes defensively.
+        const src = raw as {
+          data?: {
+            id?: string;
+            name?: string;
+            username?: string;
+            profile_image_url?: string;
+          };
+          id?: string;
+          name?: string;
+          username?: string;
+          profile_image_url?: string;
+        };
+        const data = src.data ?? src;
+        if (!data?.id) {
+          console.error("[auth] X profile response missing id:", JSON.stringify(raw));
+          throw new Error("X profile response missing id");
+        }
+        return {
+          id: String(data.id),
+          name: data.name ?? data.username ?? null,
+          email: null,
+          image: data.profile_image_url ?? null,
+        };
       },
     })
   );
 }
 
+/**
+ * Extra fields we stash on the JWT + session so server code can grab
+ * the X identity without re-parsing the provider profile.
+ */
+declare module "next-auth" {
+  interface Session {
+    xUserId?: string;
+    xHandle?: string;
+    xAvatarUrl?: string;
+  }
+}
+declare module "@auth/core/jwt" {
+  interface JWT {
+    xUserId?: string;
+    xHandle?: string;
+    xAvatarUrl?: string;
+  }
+}
+
 export const { handlers, signIn, signOut, auth } = NextAuth({
   providers,
   session: { strategy: "jwt" },
+  // Trust the Vercel / localhost host headers — Auth.js v5 requires
+  // this to be explicit outside of its own deployment adapters.
+  trustHost: true,
   callbacks: {
-    async jwt({ token, account, profile }) {
-      // Persist the access token + X profile id on first sign-in.
-      if (account?.access_token) {
-        token.xAccessToken = account.access_token;
-      }
-      if (profile && typeof profile === "object" && "data" in profile) {
-        const data = (profile as { data?: { id?: string; username?: string; profile_image_url?: string } }).data;
-        if (data?.id) token.xUserId = data.id;
-        if (data?.username) token.xHandle = data.username;
-        if (data?.profile_image_url) token.xAvatarUrl = data.profile_image_url;
-      }
+    async jwt({ token, profile, user }) {
+      // On first sign-in the OAuth profile carries the raw X payload.
+      // We thread it through to the session via token fields.
+      const raw = profile as
+        | { data?: { id?: string; username?: string; profile_image_url?: string } }
+        | undefined;
+      const data = raw?.data ?? (raw as typeof raw & { id?: string; username?: string; profile_image_url?: string });
+      if (data?.id) token.xUserId = String(data.id);
+      if (data?.username) token.xHandle = data.username;
+      if (data?.profile_image_url) token.xAvatarUrl = data.profile_image_url;
+      // Belt + braces — if the provider's `profile()` already returned
+      // a `user` object, mirror its id into our field.
+      if (!token.xUserId && user?.id) token.xUserId = user.id;
       return token;
     },
     async session({ session, token }) {
-      // Expose only non-sensitive bits to the client. The access
-      // token stays server-side (read from the JWT directly in
-      // server components / route handlers).
-      (session as typeof session & { xUserId?: string; xHandle?: string; xAvatarUrl?: string }).xUserId =
-        token.xUserId as string | undefined;
-      (session as typeof session & { xUserId?: string; xHandle?: string; xAvatarUrl?: string }).xHandle =
-        token.xHandle as string | undefined;
-      (session as typeof session & { xUserId?: string; xHandle?: string; xAvatarUrl?: string }).xAvatarUrl =
-        token.xAvatarUrl as string | undefined;
+      session.xUserId = token.xUserId;
+      session.xHandle = token.xHandle;
+      session.xAvatarUrl = token.xAvatarUrl;
       return session;
     },
   },
   pages: {
-    // Keep users on /early-access rather than Auth.js's default
-    // sign-in UI — the landing hero is the "sign-in page" now.
+    // Send users back to the hero rather than Auth.js's default UI.
     signIn: "/early-access",
   },
 });
