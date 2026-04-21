@@ -45,10 +45,11 @@ if (process.env.X_CLIENT_ID && process.env.X_CLIENT_SECRET) {
       userinfo: {
         url: "https://api.twitter.com/2/users/me",
         params: {
-          // Pull follower count + created_at so the rarity engine can
-          // weight big accounts heavily without an extra API call.
+          // Pull follower count + created_at + description so the
+          // rarity engine has everything (tier bonus, age bonus, Base
+          // bio bonus) without a second API call per sign-up.
           "user.fields":
-            "id,name,username,profile_image_url,public_metrics,created_at",
+            "id,name,username,profile_image_url,public_metrics,created_at,description",
         },
       },
       profile(raw) {
@@ -60,6 +61,7 @@ if (process.env.X_CLIENT_ID && process.env.X_CLIENT_SECRET) {
             profile_image_url?: string;
             public_metrics?: { followers_count?: number };
             created_at?: string;
+            description?: string;
           };
           id?: string;
           name?: string;
@@ -67,6 +69,7 @@ if (process.env.X_CLIENT_ID && process.env.X_CLIENT_SECRET) {
           profile_image_url?: string;
           public_metrics?: { followers_count?: number };
           created_at?: string;
+          description?: string;
           title?: string;
           detail?: string;
           status?: number;
@@ -83,9 +86,13 @@ if (process.env.X_CLIENT_ID && process.env.X_CLIENT_SECRET) {
               : "X /2/users/me returned no user data";
           throw new Error(`X profile parse failed — ${reason}`);
         }
-        // Stash the metrics-bearing fields under custom keys so the
-        // jwt callback can lift them onto the session without a
-        // second X API call.
+        // Base bio detection is computed here (free — already have
+        // the description) so every downstream consumer (jwt, /me,
+        // async verifier) gets a simple boolean.
+        const bio = data.description ?? "";
+        const bioMentionsBase =
+          /\b(base|basechain|onbase|built\s*on\s*base)\b/i.test(bio) ||
+          /#base\b/i.test(bio);
         return {
           id: String(data.id),
           name: data.name ?? data.username ?? null,
@@ -94,6 +101,7 @@ if (process.env.X_CLIENT_ID && process.env.X_CLIENT_SECRET) {
           xUsername: data.username,
           xFollowerCount: data.public_metrics?.followers_count ?? 0,
           xCreatedAt: data.created_at,
+          xBioMentionsBase: bioMentionsBase,
         } as unknown as { id: string; name: string | null; email: null; image: string | null };
       },
     })
@@ -111,6 +119,7 @@ declare module "next-auth" {
     xAvatarUrl?: string;
     xFollowerCount?: number;
     xAccountAgeDays?: number;
+    xBioMentionsBase?: boolean;
   }
 }
 declare module "@auth/core/jwt" {
@@ -120,6 +129,7 @@ declare module "@auth/core/jwt" {
     xAvatarUrl?: string;
     xFollowerCount?: number;
     xAccountAgeDays?: number;
+    xBioMentionsBase?: boolean;
   }
 }
 
@@ -141,6 +151,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
               profile_image_url?: string;
               public_metrics?: { followers_count?: number };
               created_at?: string;
+              description?: string;
             };
           }
         | undefined;
@@ -152,6 +163,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           profile_image_url?: string;
           public_metrics?: { followers_count?: number };
           created_at?: string;
+          description?: string;
         });
       if (data?.id) token.xUserId = String(data.id);
       if (data?.username) token.xHandle = data.username;
@@ -168,6 +180,11 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           );
         }
       }
+      if (typeof data?.description === "string") {
+        token.xBioMentionsBase =
+          /\b(base|basechain|onbase|built\s*on\s*base)\b/i.test(data.description) ||
+          /#base\b/i.test(data.description);
+      }
       // Belt + braces fallback for the user.id from profile().
       if (!token.xUserId && user?.id) token.xUserId = user.id;
       // The custom keys we returned from profile() are mirrored on
@@ -177,6 +194,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             xUsername?: string;
             xFollowerCount?: number;
             xCreatedAt?: string;
+            xBioMentionsBase?: boolean;
           })
         | undefined;
       if (!token.xHandle && u?.xUsername) token.xHandle = u.xUsername;
@@ -192,6 +210,9 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           );
         }
       }
+      if (token.xBioMentionsBase == null && typeof u?.xBioMentionsBase === "boolean") {
+        token.xBioMentionsBase = u.xBioMentionsBase;
+      }
       return token;
     },
     async session({ session, token }) {
@@ -200,6 +221,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       session.xAvatarUrl = token.xAvatarUrl;
       session.xFollowerCount = token.xFollowerCount;
       session.xAccountAgeDays = token.xAccountAgeDays;
+      session.xBioMentionsBase = token.xBioMentionsBase;
       return session;
     },
   },

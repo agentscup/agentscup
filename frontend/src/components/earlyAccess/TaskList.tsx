@@ -38,24 +38,25 @@ interface Props {
   tasks: TaskState;
   onTaskComplete: (task: keyof TaskState) => void;
   onReveal: () => void;
-  /** Deterministic jitter for the handle — shown in the meter so the
-      preview matches the real rarity roll. */
+  /** Deterministic jitter for the handle (0-10) — shown in the meter
+      so the preview matches the real rarity roll. */
   handleJitter: number;
   /** Live X follower count for the signed-in account (or 0 while in
-      mock mode). Drives the biggest slice of the rarity meter. */
+      mock mode). The biggest slice of the rarity meter. */
   followerCount?: number;
   /** Days since the X account was created — +5 pts if ≥ 365. */
   accountAgeDays?: number;
+  /** True if the user's X bio mentions "base" / "basechain" — cheap
+      Base-engagement bonus computed at OAuth time. */
+  bioMentionsBase?: boolean;
 }
 
 interface TaskDef {
   key: keyof TaskState;
   title: string;
   subtitle: string;
-  points: number;
   intent: string;
   accent: string;
-  badge?: string;
 }
 
 const TASKS: TaskDef[] = [
@@ -63,15 +64,13 @@ const TASKS: TaskDef[] = [
     key: "notificationsOn",
     title: "Turn on @agentscup notifications",
     subtitle: "Tap the bell on our profile — don't miss launch day.",
-    points: 10,
     intent: AGENTSCUP_PROFILE,
     accent: "#b068ff",
   },
   {
     key: "likePinned",
     title: "Like our pinned post",
-    subtitle: "Quick tap, big rarity boost.",
-    points: 15,
+    subtitle: "One tap on the heart.",
     intent: pinnedIntent("like"),
     accent: "#FF3B8A",
   },
@@ -79,7 +78,6 @@ const TASKS: TaskDef[] = [
     key: "replyPinned",
     title: "Reply to our pinned post",
     subtitle: "Drop an emoji. Any emoji.",
-    points: 15,
     intent: pinnedIntent("reply"),
     accent: "#FFD700",
   },
@@ -99,26 +97,22 @@ export default function TaskList({
   handleJitter,
   followerCount,
   accountAgeDays,
+  bioMentionsBase,
 }: Props) {
-  // Meter now includes everything the reveal will count, so the
-  // predicted rarity the user sees here matches the card they pull.
+  // Rarity is entirely account-driven — tasks gate the REVEAL
+  // button but do not add points, per the launch rubric. The
+  // predicted tier the user sees here equals the card they pull.
   const followerTier = useMemo(
     () => followerTierBonus(followerCount),
     [followerCount]
   );
   const ageBonus = (accountAgeDays ?? 0) >= 365 ? 5 : 0;
+  const baseBio = bioMentionsBase ? 10 : 0;
 
-  const score = useMemo(() => {
-    let s = handleJitter + followerTier.points + ageBonus;
-    if (tasks.notificationsOn) s += 10;
-    if (tasks.likePinned) s += 15;
-    if (tasks.replyPinned) s += 15;
-    return s;
-  }, [tasks, handleJitter, followerTier.points, ageBonus]);
-
+  const score = handleJitter + followerTier.points + ageBonus + baseBio;
   const rarity = scoreToRarity(score);
-  // The meter is sized against the full theoretical max so tier
-  // markers at 30 / 60 / 90 land in their right proportional slots.
+  // Size against the full theoretical max so tier markers at
+  // 30 / 60 / 90 land in their correct proportional slots.
   const maxScore = MAX_RARITY_SCORE;
 
   const tasksDone = TASKS.every((t) => tasks[t.key]);
@@ -144,6 +138,7 @@ export default function TaskList({
         maxScore={maxScore}
         followerTier={followerTier}
         followerCount={followerCount}
+        baseBioBonus={baseBio}
       />
 
       <div className="mt-8 space-y-2.5">
@@ -277,13 +272,12 @@ function TaskRow({
         </div>
 
         <div
-          className="shrink-0 font-pixel text-[10px] tracking-wider"
+          className="shrink-0 font-pixel text-[7px] tracking-[0.3em]"
           style={{
-            color: done ? "#7fc878" : accent,
-            opacity: done ? 0.6 : 1,
+            color: done ? "#7fc878" : "rgba(255,255,255,0.3)",
           }}
         >
-          +{def.points}
+          {done ? "DONE" : "REQUIRED"}
         </div>
       </div>
     </button>
@@ -301,18 +295,62 @@ const RARITY_COLORS: Record<Rarity, string> = {
   LEGENDARY: "#FFD700",
 };
 
+// ─────────────────────────────────────────────────────────────────────
+// Signal strip helper
+// ─────────────────────────────────────────────────────────────────────
+
+function BonusRow({
+  label,
+  detail,
+  points,
+  accent = "#FFD700",
+}: {
+  label: string;
+  detail: string;
+  points: number;
+  accent?: string;
+}) {
+  const active = points > 0;
+  return (
+    <div
+      className="flex items-center justify-between px-3 py-2"
+      style={{
+        background: "rgba(0,0,0,0.35)",
+        borderLeft: `2px solid ${active ? accent : "rgba(255,255,255,0.15)"}`,
+      }}
+    >
+      <div className="flex items-baseline gap-2 min-w-0">
+        <span className="font-pixel text-[7px] text-white/40 tracking-[0.3em] shrink-0">
+          {label}
+        </span>
+        <span className="text-[11px] text-white/60 truncate lowercase">
+          {detail}
+        </span>
+      </div>
+      <span
+        className="font-pixel text-[10px] tracking-[0.15em] shrink-0"
+        style={{ color: active ? accent : "rgba(255,255,255,0.3)" }}
+      >
+        {active ? `+${points}` : "—"}
+      </span>
+    </div>
+  );
+}
+
 function RarityMeter({
   score,
   rarity,
   maxScore,
   followerTier,
   followerCount,
+  baseBioBonus,
 }: {
   score: number;
   rarity: Rarity;
   maxScore: number;
   followerTier: { label: string; points: number };
   followerCount?: number;
+  baseBioBonus: number;
 }) {
   const pct = Math.min(100, Math.round((score / Math.max(maxScore, 1)) * 100));
   const color = RARITY_COLORS[rarity];
@@ -333,33 +371,23 @@ function RarityMeter({
         </span>
       </div>
 
-      {/* Follower bonus strip — tells the user up-front that their
-          account size is already working in their favour (or not). */}
+      {/* Signal strip — tells the user up-front which account signals
+          are already working in their favour. Nothing here reacts to
+          the task checklist; it's purely account-driven. */}
       {showFollowerLine && (
-        <div
-          className="flex items-center justify-between px-3 py-2"
-          style={{
-            background: "rgba(0,0,0,0.35)",
-            borderLeft: `2px solid ${followerTier.points > 0 ? "#FFD700" : "rgba(255,255,255,0.15)"}`,
-          }}
-        >
-          <div className="flex items-baseline gap-2">
-            <span className="font-pixel text-[7px] text-white/40 tracking-[0.3em]">
-              FOLLOWER BONUS
-            </span>
-            <span className="text-[11px] text-white/70 lowercase">
-              {followerTier.label}
-            </span>
-          </div>
-          <span
-            className="font-pixel text-[10px] tracking-[0.15em]"
-            style={{
-              color: followerTier.points > 0 ? "#FFD700" : "rgba(255,255,255,0.3)",
-            }}
-          >
-            {followerTier.points > 0 ? `+${followerTier.points}` : "—"}
-          </span>
-        </div>
+        <BonusRow
+          label="FOLLOWER TIER"
+          detail={followerTier.label}
+          points={followerTier.points}
+        />
+      )}
+      {baseBioBonus > 0 && (
+        <BonusRow
+          label="BASE ENGAGEMENT"
+          detail="Mentions Base in bio"
+          points={baseBioBonus}
+          accent="#00AEEF"
+        />
       )}
 
       <div className="relative">

@@ -21,6 +21,7 @@ export async function GET() {
     xAvatarUrl?: string;
     xFollowerCount?: number;
     xAccountAgeDays?: number;
+    xBioMentionsBase?: boolean;
   };
 
   if (!s?.xUserId || !s.xHandle) {
@@ -34,9 +35,10 @@ export async function GET() {
     avatarUrl: s.xAvatarUrl,
     followerCount: s.xFollowerCount ?? 0,
     accountAgeDays: s.xAccountAgeDays ?? 0,
-    // Tasks stay trust-based; verifier worker reconciles later.
-    followsAgentsCup: false,
-    bioMentionsBase: false,
+    // Base bio is computed during OAuth from the profile description
+    // field — no extra X API call here, so this scales to launch
+    // volume without rate-limit concerns.
+    bioMentionsBase: !!s.xBioMentionsBase,
     baseTweetHits: 0,
   });
 }

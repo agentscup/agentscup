@@ -192,38 +192,21 @@ export default function EarlyAccessPage() {
         upgradeAvatarUrl(
           `https://unavatar.io/twitter/${encodeURIComponent(handle)}`
         ),
-      // Mock-mode default keeps unauthenticated walkthroughs in the
-      // RARE bracket. Real OAuth users get their actual follower
-      // count from /api/early-access/me which lifts them into EPIC /
-      // LEGENDARY when they qualify.
+      // Mock-mode default sits inside the <1k bucket so non-OAuth
+      // walkthroughs end up COMMON, per the launch rubric. OAuth
+      // users get their real count from /api/early-access/me.
       followerCount: realSignals?.followerCount ?? 500,
       accountAgeDays: realSignals?.accountAgeDays ?? 800,
+      bioMentionsBase: !!realSignals?.bioMentionsBase,
     };
   }
 
   async function startReveal() {
+    // Tasks are mandatory to reach this point but do not contribute
+    // rarity points. The card is derived purely from the account
+    // signals surfaced during OAuth.
     const signals = buildSignals();
     const generated = generateCard(signals);
-
-    // Layer task bonuses on top of the follower-driven base score.
-    let extra = 0;
-    const extraBreak: FounderCardT["signalBreakdown"] = [];
-    if (tasks.notificationsOn) {
-      extra += 10;
-      extraBreak.push({ label: "Notifications on", points: 10 });
-    }
-    if (tasks.likePinned) {
-      extra += 15;
-      extraBreak.push({ label: "Liked pinned post", points: 15 });
-    }
-    if (tasks.replyPinned) {
-      extra += 15;
-      extraBreak.push({ label: "Replied to pinned post", points: 15 });
-    }
-    if (extra > 0) {
-      generated.score += extra;
-      generated.signalBreakdown = [...generated.signalBreakdown, ...extraBreak];
-    }
 
     setCard(generated);
     setPhase("revealing");
@@ -330,6 +313,7 @@ export default function EarlyAccessPage() {
             handleJitter={handleJitter}
             followerCount={realSignals?.followerCount ?? 0}
             accountAgeDays={realSignals?.accountAgeDays ?? 0}
+            bioMentionsBase={!!realSignals?.bioMentionsBase}
             onTaskComplete={(k) => setTasks((prev) => ({ ...prev, [k]: true }))}
             onReveal={startReveal}
           />

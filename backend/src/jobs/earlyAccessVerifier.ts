@@ -27,9 +27,6 @@ interface ClaimRow {
   x_user_id: string;
   x_handle: string;
   claimed_tweet_url: string | null;
-  original_rarity: string | null;
-  original_score: number | null;
-  claimed_tasks: Record<string, boolean> | null;
 }
 
 async function main() {
@@ -41,7 +38,7 @@ async function main() {
   const { data: rows, error } = await supabase
     .from("early_access_claims")
     .select(
-      "id, x_user_id, x_handle, claimed_tweet_url, original_rarity, original_score, claimed_tasks"
+      "id, x_user_id, x_handle, claimed_tweet_url"
     )
     .eq("claimed", true)
     .eq("verification_status", "pending")
@@ -73,11 +70,8 @@ async function main() {
         .update({
           verification_status: result.status,
           verification_run_at: new Date().toISOString(),
-          verified_at: result.status === "verified" ? new Date().toISOString() : null,
-          // Apply rarity downgrade server-side so the public card
-          // preview + OG image reflect the corrected state.
-          rarity: result.correctedRarity ?? row.original_rarity,
-          score: result.correctedScore ?? row.original_score,
+          verified_at:
+            result.status === "verified" ? new Date().toISOString() : null,
         })
         .eq("id", row.id);
     } catch (err) {
@@ -96,10 +90,9 @@ async function verifyOne(row: ClaimRow): Promise<{
   correctedRarity?: string;
   correctedScore?: number;
 }> {
-  const claimedTasks = row.claimed_tasks ?? {};
   const tweetId = extractTweetId(row.claimed_tweet_url ?? "");
 
-  // 1. Tweet still exists and was posted by this user?
+  // Tweet still exists and was posted by this user?
   let tweetOk = false;
   if (tweetId) {
     try {
@@ -112,28 +105,14 @@ async function verifyOne(row: ClaimRow): Promise<{
     }
   }
 
-  // All three tasks (notifications, like, reply) are honour-system —
-  // X API has no cheap endpoint to confirm a notification toggle or a
-  // like on a specific tweet without more scopes than we ask for.
-  // They count when the user ticked them AND the share tweet is legit.
-  let score = jitter(row.x_handle);
-  const tasks = claimedTasks;
-  if (tweetOk && tasks.notificationsOn) score += 10;
-  if (tweetOk && tasks.likePinned) score += 15;
-  if (tweetOk && tasks.replyPinned) score += 15;
-
-  const rarity = scoreToRarity(score);
-
-  // Flag only when the share tweet is gone — the other signals can't
-  // be cheaply cross-checked.
+  // Tasks no longer contribute rarity points — they're a reveal
+  // gate, nothing more. The only thing the verifier can hard-check
+  // is the share tweet itself. Everything else (follower count, age,
+  // base bio) was fixed at OAuth time and isn't worth re-fetching.
   const tweetGone = !!row.claimed_tweet_url && !tweetOk;
   const status: "verified" | "flagged" = tweetGone ? "flagged" : "verified";
 
-  return {
-    status,
-    correctedRarity: rarity,
-    correctedScore: score,
-  };
+  return { status };
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -149,27 +128,6 @@ async function xGet<T>(path: string): Promise<T> {
     throw new Error(`X API ${res.status}: ${text.slice(0, 120)}`);
   }
   return (await res.json()) as T;
-}
-
-// ─────────────────────────────────────────────────────────────────────
-// Scoring helpers (must stay in sync with frontend cardGen.ts)
-// ─────────────────────────────────────────────────────────────────────
-
-function scoreToRarity(score: number): "COMMON" | "RARE" | "EPIC" | "LEGENDARY" {
-  if (score >= 90) return "LEGENDARY";
-  if (score >= 60) return "EPIC";
-  if (score >= 30) return "RARE";
-  return "COMMON";
-}
-
-function jitter(handle: string): number {
-  let h = 0x811c9dc5;
-  const k = `jitter:${handle}`;
-  for (let i = 0; i < k.length; i++) {
-    h ^= k.charCodeAt(i);
-    h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
-  }
-  return h % 16;
 }
 
 function extractTweetId(url: string): string | null {

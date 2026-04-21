@@ -54,26 +54,39 @@ export interface FounderCard {
 
 /**
  * Follower-count → rarity points. Exported so the TaskList meter can
- * include the same bonus the reveal will apply, keeping the predicted
- * rarity honest.
+ * preview the exact same bonus the reveal will apply.
+ *
+ * Thresholds are set so each tier boundary lines up with a follower
+ * milestone — jitter (0-10) never crosses a tier by itself:
+ *
+ *   10k+ followers →  90  → LEGENDARY floor
+ *    2k+ followers →  60  → EPIC floor
+ *    1k+ followers →  30  → RARE floor
+ *    <1k  followers →  0  → COMMON
+ *
+ * Completing tasks no longer contributes to the score — tasks are a
+ * reveal gate, not a score modifier. A 500-follower account that
+ * ticks every task still ends up COMMON unless they cross a real
+ * follower milestone.
  */
 export function followerTierBonus(followerCount: number | undefined): {
   label: string;
   points: number;
 } {
   const n = followerCount ?? 0;
-  if (n >= 100_000) return { label: "100k+ followers", points: 85 };
-  if (n >= 10_000) return { label: "10k+ followers", points: 60 };
-  if (n >= 1_000) return { label: "1k+ followers", points: 25 };
-  if (n >= 100) return { label: "100+ followers", points: 10 };
-  return { label: "<100 followers", points: 0 };
+  if (n >= 100_000) return { label: "100k+ followers", points: 105 };
+  if (n >= 10_000) return { label: "10k+ followers", points: 90 };
+  if (n >= 2_000) return { label: "2k+ followers", points: 60 };
+  if (n >= 1_000) return { label: "1k+ followers", points: 30 };
+  return { label: "<1k followers", points: 0 };
 }
 
 /** Theoretical max of the overall score — used by the task meter to
- *  position tier markers correctly. */
-export const MAX_RARITY_SCORE = 15 + 85 + 5 + 10 + 15 + 15; // = 145
-// jitter (15) + follower max (85) + age (5) + task-notifications (10)
-// + task-like (15) + task-reply (15)
+ *  position tier markers correctly.
+ *
+ *    follower tier (max 105) + age bonus (5) + base bio (10) + jitter (10) = 130
+ */
+export const MAX_RARITY_SCORE = 105 + 5 + 10 + 10;
 
 export function computeRarityScore(s: XSignals): {
   score: number;
@@ -90,11 +103,20 @@ export function computeRarityScore(s: XSignals): {
     breakdown.push({ label: "1yr+ account", points: 5 });
   }
 
-  // Deterministic jitter from handle hash so two users with identical
-  // signals still get unique-feeling cards.
-  const jitter = hashToInt(`jitter:${s.handle}`) % 16;
+  // Ecosystem signal — only picks up a bio mention (free, it's
+  // already in the OAuth profile payload). Follow-checking @base
+  // would need paging through /following at 75 req/15min, which
+  // breaks the scale budget, so we skip it.
+  if (s.bioMentionsBase) {
+    breakdown.push({ label: "Base in bio", points: 10 });
+  }
+
+  // Deterministic flavour jitter (0-10) — small enough that it
+  // cannot shove a user across the RARE/EPIC/LEGENDARY gates on
+  // its own.
+  const jitter = hashToInt(`jitter:${s.handle}`) % 11;
   if (jitter > 0) {
-    breakdown.push({ label: "Founder bonus", points: jitter });
+    breakdown.push({ label: "Founder flair", points: jitter });
   }
 
   const score = breakdown.reduce((sum, b) => sum + b.points, 0);
