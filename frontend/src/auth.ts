@@ -26,17 +26,24 @@ if (process.env.X_CLIENT_ID && process.env.X_CLIENT_SECRET) {
       clientId: process.env.X_CLIENT_ID,
       clientSecret: process.env.X_CLIENT_SECRET,
       authorization: {
-        // Use the x.com domains — twitter.com still works as a
-        // redirect but some newer app configs return 403 from the
-        // legacy host. Safest to match what X's current docs show.
+        // x.com for the user-facing authorize page (X's web app),
+        // api.twitter.com for the API hosts — that's the split X
+        // actually documents. Mixing them up is a known cause of
+        // silent 403s on /2/users/me.
         url: "https://x.com/i/oauth2/authorize",
         params: {
-          scope: "users.read",
+          // Add tweet.read alongside users.read — some X app
+          // configs reject /2/users/me when only the bare users.read
+          // scope is granted. tweet.read is harmless (we don't use
+          // it) but unblocks the profile fetch.
+          scope: "users.read tweet.read offline.access",
+          response_type: "code",
+          code_challenge_method: "S256",
         },
       },
-      token: { url: "https://api.x.com/2/oauth2/token" },
+      token: { url: "https://api.twitter.com/2/oauth2/token" },
       userinfo: {
-        url: "https://api.x.com/2/users/me",
+        url: "https://api.twitter.com/2/users/me",
         params: {
           "user.fields": "id,name,username,profile_image_url",
         },
