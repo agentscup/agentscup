@@ -292,7 +292,12 @@ export default function EarlyAccessPage() {
           </>
         )}
 
-        {restoreChecked && phase === "handle" && !oauthAvailable && (
+        {/* Handle-step now always renders when requested — OAuth is
+            still the default path (button is more prominent), but
+            users whose X app dead-ends the OAuth link can fall
+            through the "trouble connecting?" escape hatch on the
+            landing and still complete the flow. */}
+        {restoreChecked && phase === "handle" && (
           <HandleStep
             onSubmit={(h) => {
               setHandle(h);

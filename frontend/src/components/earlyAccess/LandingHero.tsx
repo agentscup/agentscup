@@ -11,6 +11,11 @@ interface Props {
   signInWith?: ReactNode | null;
 }
 
+const OAUTH_TROUBLE_DEFAULT =
+  "Android + X app installed? Tap below to enter manually.";
+const OAUTH_TROUBLE_EXPANDED =
+  "The X Android app intercepts its own OAuth links and gets stuck before showing the login dialog. We'll accept your handle directly and verify your share tweet later.";
+
 /**
  * Refined hero — single focal point, generous whitespace, no
  * decorative noise around the CTA. Counter sits as a small dignified
@@ -18,6 +23,7 @@ interface Props {
  */
 export default function LandingHero({ onStart, signInWith }: Props) {
   const [claimed, setClaimed] = useState<number | null>(null);
+  const [troubleExpanded, setTroubleExpanded] = useState(false);
 
   useEffect(() => {
     fetch("/api/early-access/stats")
@@ -94,6 +100,49 @@ export default function LandingHero({ onStart, signInWith }: Props) {
           />
           <span className="relative">CONNECT WITH X</span>
         </button>
+      )}
+
+      {/* Manual-entry fallback. On Android the X app intercepts its
+          own OAuth URLs and often dead-ends before the authorize
+          dialog ever appears. Offering a visible escape hatch lets
+          those users still claim their card — the flow persists an
+          x_user_id prefixed with `mock:` so we can tell OAuth-
+          verified claims from handle-entered ones later. */}
+      {signInWith && (
+        <div className="mt-5 flex flex-col items-center gap-2 max-w-[340px] mx-auto px-2">
+          {!troubleExpanded ? (
+            <button
+              type="button"
+              onClick={() => setTroubleExpanded(true)}
+              className="font-pixel text-[8px] tracking-[0.2em] text-white/40 hover:text-white/70 underline underline-offset-4 decoration-white/20"
+              style={{ touchAction: "manipulation" }}
+            >
+              TROUBLE CONNECTING?
+            </button>
+          ) : (
+            <>
+              <p className="text-[11px] text-white/50 leading-relaxed text-center">
+                {OAUTH_TROUBLE_EXPANDED}
+              </p>
+              <button
+                type="button"
+                onClick={onStart}
+                className="font-pixel text-[9px] tracking-[0.3em] text-[#FFD700] hover:text-[#FFF4B0] px-3 py-2 min-h-[40px]"
+                style={{
+                  border: "1px solid rgba(255,215,0,0.35)",
+                  background: "rgba(255,215,0,0.05)",
+                  borderRadius: "2px",
+                  touchAction: "manipulation",
+                }}
+              >
+                ENTER HANDLE MANUALLY →
+              </button>
+            </>
+          )}
+          <p className="font-pixel text-[7px] tracking-[0.25em] text-white/25 text-center mt-2 hidden sm:block">
+            {OAUTH_TROUBLE_DEFAULT}
+          </p>
+        </div>
       )}
 
       <style jsx>{`
