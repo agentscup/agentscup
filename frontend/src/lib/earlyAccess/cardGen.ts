@@ -52,25 +52,38 @@ export interface FounderCard {
 // Rarity
 // ─────────────────────────────────────────────────────────────────────
 
+/**
+ * Follower-count → rarity points. Exported so the TaskList meter can
+ * include the same bonus the reveal will apply, keeping the predicted
+ * rarity honest.
+ */
+export function followerTierBonus(followerCount: number | undefined): {
+  label: string;
+  points: number;
+} {
+  const n = followerCount ?? 0;
+  if (n >= 100_000) return { label: "100k+ followers", points: 85 };
+  if (n >= 10_000) return { label: "10k+ followers", points: 60 };
+  if (n >= 1_000) return { label: "1k+ followers", points: 25 };
+  if (n >= 100) return { label: "100+ followers", points: 10 };
+  return { label: "<100 followers", points: 0 };
+}
+
+/** Theoretical max of the overall score — used by the task meter to
+ *  position tier markers correctly. */
+export const MAX_RARITY_SCORE = 15 + 85 + 5 + 10 + 15 + 15; // = 145
+// jitter (15) + follower max (85) + age (5) + task-notifications (10)
+// + task-like (15) + task-reply (15)
+
 export function computeRarityScore(s: XSignals): {
   score: number;
   breakdown: Array<{ label: string; points: number }>;
 } {
   const breakdown: Array<{ label: string; points: number }> = [];
 
-  // Follower count is the dominant signal — big accounts get
-  // legendary-tier cards even before completing tasks. Tier
-  // breakpoints chosen so a 10k+ account + all three tasks lands
-  // comfortably in LEGENDARY range.
-  const followers = s.followerCount ?? 0;
-  if (followers >= 100_000) {
-    breakdown.push({ label: "100k+ followers", points: 85 });
-  } else if (followers >= 10_000) {
-    breakdown.push({ label: "10k+ followers", points: 60 });
-  } else if (followers >= 1_000) {
-    breakdown.push({ label: "1k+ followers", points: 25 });
-  } else if (followers >= 100) {
-    breakdown.push({ label: "100+ followers", points: 10 });
+  const tier = followerTierBonus(s.followerCount);
+  if (tier.points > 0) {
+    breakdown.push(tier);
   }
 
   if ((s.accountAgeDays ?? 0) >= 365) {

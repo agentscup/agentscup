@@ -2,7 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { Rarity } from "@/lib/earlyAccess/cardGen";
-import { scoreToRarity } from "@/lib/earlyAccess/cardGen";
+import {
+  scoreToRarity,
+  followerTierBonus,
+  MAX_RARITY_SCORE,
+} from "@/lib/earlyAccess/cardGen";
 
 export interface TaskState {
   notificationsOn: boolean;
@@ -37,6 +41,11 @@ interface Props {
   /** Deterministic jitter for the handle — shown in the meter so the
       preview matches the real rarity roll. */
   handleJitter: number;
+  /** Live X follower count for the signed-in account (or 0 while in
+      mock mode). Drives the biggest slice of the rarity meter. */
+  followerCount?: number;
+  /** Days since the X account was created — +5 pts if ≥ 365. */
+  accountAgeDays?: number;
 }
 
 interface TaskDef {
@@ -88,21 +97,29 @@ export default function TaskList({
   onTaskComplete,
   onReveal,
   handleJitter,
+  followerCount,
+  accountAgeDays,
 }: Props) {
-  // Tasks contribute up to +40 here. The bigger lever is follower
-  // count (computed server-side at reveal time, +10 to +85). The
-  // meter intentionally only previews task-driven movement — real
-  // follower bonuses appear in the score when the card reveals.
+  // Meter now includes everything the reveal will count, so the
+  // predicted rarity the user sees here matches the card they pull.
+  const followerTier = useMemo(
+    () => followerTierBonus(followerCount),
+    [followerCount]
+  );
+  const ageBonus = (accountAgeDays ?? 0) >= 365 ? 5 : 0;
+
   const score = useMemo(() => {
-    let s = handleJitter;
+    let s = handleJitter + followerTier.points + ageBonus;
     if (tasks.notificationsOn) s += 10;
     if (tasks.likePinned) s += 15;
     if (tasks.replyPinned) s += 15;
     return s;
-  }, [tasks, handleJitter]);
+  }, [tasks, handleJitter, followerTier.points, ageBonus]);
 
   const rarity = scoreToRarity(score);
-  const maxScore = handleJitter + 10 + 15 + 15;
+  // The meter is sized against the full theoretical max so tier
+  // markers at 30 / 60 / 90 land in their right proportional slots.
+  const maxScore = MAX_RARITY_SCORE;
 
   const tasksDone = TASKS.every((t) => tasks[t.key]);
   const remaining = TASKS.filter((t) => !tasks[t.key]).length;
@@ -121,7 +138,13 @@ export default function TaskList({
         </div>
       </div>
 
-      <RarityMeter score={score} rarity={rarity} maxScore={maxScore} />
+      <RarityMeter
+        score={score}
+        rarity={rarity}
+        maxScore={maxScore}
+        followerTier={followerTier}
+        followerCount={followerCount}
+      />
 
       <div className="mt-8 space-y-2.5">
         {TASKS.map((t, i) => (
@@ -282,13 +305,19 @@ function RarityMeter({
   score,
   rarity,
   maxScore,
+  followerTier,
+  followerCount,
 }: {
   score: number;
   rarity: Rarity;
   maxScore: number;
+  followerTier: { label: string; points: number };
+  followerCount?: number;
 }) {
   const pct = Math.min(100, Math.round((score / Math.max(maxScore, 1)) * 100));
   const color = RARITY_COLORS[rarity];
+
+  const showFollowerLine = (followerCount ?? 0) > 0 || followerTier.points > 0;
 
   return (
     <div className="space-y-3">
@@ -303,6 +332,35 @@ function RarityMeter({
           {rarity}
         </span>
       </div>
+
+      {/* Follower bonus strip — tells the user up-front that their
+          account size is already working in their favour (or not). */}
+      {showFollowerLine && (
+        <div
+          className="flex items-center justify-between px-3 py-2"
+          style={{
+            background: "rgba(0,0,0,0.35)",
+            borderLeft: `2px solid ${followerTier.points > 0 ? "#FFD700" : "rgba(255,255,255,0.15)"}`,
+          }}
+        >
+          <div className="flex items-baseline gap-2">
+            <span className="font-pixel text-[7px] text-white/40 tracking-[0.3em]">
+              FOLLOWER BONUS
+            </span>
+            <span className="text-[11px] text-white/70 lowercase">
+              {followerTier.label}
+            </span>
+          </div>
+          <span
+            className="font-pixel text-[10px] tracking-[0.15em]"
+            style={{
+              color: followerTier.points > 0 ? "#FFD700" : "rgba(255,255,255,0.3)",
+            }}
+          >
+            {followerTier.points > 0 ? `+${followerTier.points}` : "—"}
+          </span>
+        </div>
+      )}
 
       <div className="relative">
         {/* Track */}

@@ -328,6 +328,8 @@ export default function EarlyAccessPage() {
             handle={handle}
             tasks={tasks}
             handleJitter={handleJitter}
+            followerCount={realSignals?.followerCount ?? 0}
+            accountAgeDays={realSignals?.accountAgeDays ?? 0}
             onTaskComplete={(k) => setTasks((prev) => ({ ...prev, [k]: true }))}
             onReveal={startReveal}
           />
