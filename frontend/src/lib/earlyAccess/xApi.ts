@@ -17,6 +17,10 @@ interface XApiError extends Error {
   status?: number;
 }
 
+/** Upper bound on any single X API call. Keeps claim-path latency
+ *  deterministic under launch load even if X itself is degraded. */
+const X_API_TIMEOUT_MS = 4000;
+
 export async function xGet<T>(path: string, init?: RequestInit): Promise<T> {
   const bearer = process.env.X_BEARER_TOKEN;
   if (!bearer) {
@@ -24,22 +28,38 @@ export async function xGet<T>(path: string, init?: RequestInit): Promise<T> {
     err.status = 500;
     throw err;
   }
-  const res = await fetch(`${API_BASE}${path}`, {
-    ...init,
-    headers: {
-      ...(init?.headers || {}),
-      Authorization: `Bearer ${bearer}`,
-    },
-    // Cache user-lookup calls briefly — X rate limits bite otherwise.
-    next: { revalidate: 300 },
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    const err: XApiError = new Error(`X API ${res.status}: ${text.slice(0, 160)}`);
-    err.status = res.status;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), X_API_TIMEOUT_MS);
+
+  try {
+    const res = await fetch(`${API_BASE}${path}`, {
+      ...init,
+      headers: {
+        ...(init?.headers || {}),
+        Authorization: `Bearer ${bearer}`,
+      },
+      signal: controller.signal,
+      // Cache user-lookup calls briefly — X rate limits bite otherwise.
+      next: { revalidate: 300 },
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      const err: XApiError = new Error(`X API ${res.status}: ${text.slice(0, 160)}`);
+      err.status = res.status;
+      throw err;
+    }
+    return (await res.json()) as T;
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      const e: XApiError = new Error("X API timeout");
+      e.status = 504;
+      throw e;
+    }
     throw err;
+  } finally {
+    clearTimeout(timeout);
   }
-  return (await res.json()) as T;
 }
 
 // ─────────────────────────────────────────────────────────────────────

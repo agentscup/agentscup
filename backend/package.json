@@ -7,7 +7,8 @@
     "dev": "nodemon --exec ts-node src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "test": "jest --forceExit"
+    "test": "jest --forceExit",
+    "verify:early-access": "ts-node src/jobs/earlyAccessVerifier.ts"
   },
   "keywords": [],
   "author": "",

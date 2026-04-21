@@ -65,10 +65,17 @@ export async function POST(req: Request) {
   //   1. Fetch the tweet via X API v2.
   //   2. Confirm `author_id` matches the signed-in X user id.
   //   3. Confirm the tweet body contains our share URL.
-  // Falls through to trust-based claim when no session exists (pre-
-  // OAuth rollout / mock-handle path).
+  //
+  // Under launch load the X API can rate-limit or go slow. If the
+  // lookup fails for reasons other than a clear "wrong author"
+  // mismatch (timeout, 429, server error), we accept the claim and
+  // mark it `pending` — the async verification worker re-runs the
+  // same checks later and flips to `flagged` if it finds abuse. This
+  // keeps the signup funnel open under stress instead of turning
+  // transient X outages into user-facing claim failures.
   const session = await auth();
   const xUserId = (session as typeof session & { xUserId?: string })?.xUserId;
+  let verificationStatus: "pending" | "verified" | "flagged" = "pending";
 
   if (xUserId && process.env.X_BEARER_TOKEN) {
     const tweetId = tweetIdFromUrl(tweetUrl);
@@ -98,11 +105,18 @@ export async function POST(req: Request) {
           { status: 400 }
         );
       }
+      verificationStatus = "verified";
     } catch (err) {
-      return NextResponse.json(
-        { error: err instanceof Error ? err.message : "Tweet lookup failed" },
-        { status: 400 }
-      );
+      const e = err as { status?: number };
+      // Hard client errors (malformed request) still fail the claim.
+      if (e.status && e.status >= 400 && e.status < 500 && e.status !== 429) {
+        return NextResponse.json(
+          { error: err instanceof Error ? err.message : "Tweet lookup failed" },
+          { status: 400 }
+        );
+      }
+      // Transient failures (timeout, rate-limit, 5xx): accept and
+      // let the async worker verify. Status stays `pending`.
     }
   }
 
@@ -133,6 +147,8 @@ export async function POST(req: Request) {
       claimed: true,
       claimed_tweet_url: tweetUrl,
       claimed_at: new Date().toISOString(),
+      verification_status: verificationStatus,
+      verified_at: verificationStatus === "verified" ? new Date().toISOString() : null,
     })
     .eq("id", existing.id);
 

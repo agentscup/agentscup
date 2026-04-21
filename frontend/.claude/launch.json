@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "frontend-dev",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", "cd 'C:/Users/doguk/OneDrive/Desktop/agentscup/frontend' && npm run dev"],
+      "port": 3000
+    }
+  ]
+}

@@ -23,7 +23,11 @@ export async function POST(req: Request) {
     );
   }
 
-  let body: { signals?: XSignals; card?: FounderCard };
+  let body: {
+    signals?: XSignals;
+    card?: FounderCard;
+    tasks?: Record<string, boolean>;
+  };
   try {
     body = (await req.json()) as typeof body;
   } catch {
@@ -41,10 +45,13 @@ export async function POST(req: Request) {
 
   const supabase = createClient(url, key, { auth: { persistSession: false } });
 
-  // In mock-auth mode we don't have a stable X user id, so we use the
-  // handle itself (lowercased). Real OAuth will replace this with the
-  // numeric X id from the token payload.
-  const xUserId = `mock:${signals.handle}`;
+  // Prefer the authenticated X numeric id when available — stops
+  // handle-squatters from claiming cards they don't own. The mock
+  // fallback (mock:<handle>) is only used during the pre-OAuth
+  // rollout / local dev.
+  const session = await (await import("@/auth")).auth();
+  const realXId = (session as typeof session & { xUserId?: string })?.xUserId;
+  const xUserId = realXId ?? `mock:${signals.handle}`;
 
   const row = {
     x_user_id: xUserId,
@@ -61,6 +68,13 @@ export async function POST(req: Request) {
     stats: card.stats as unknown as Record<string, number>,
     position: card.position,
     overall: card.overall,
+    claimed_tasks: body.tasks ?? {},
+    // Snapshot the pre-verification rarity so the async worker can
+    // measure "did this user over-claim?" even after it downgrades the
+    // live rarity column.
+    original_rarity: card.rarity,
+    original_score: card.score,
+    verification_status: "pending",
   };
 
   const { data, error } = await supabase

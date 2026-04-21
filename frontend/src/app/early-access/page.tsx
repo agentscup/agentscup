@@ -130,7 +130,7 @@ export default function EarlyAccessPage() {
     fetch("/api/early-access/reveal", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ signals, card: generated }),
+      body: JSON.stringify({ signals, card: generated, tasks }),
     })
       .then((r) => (r.ok ? r.json() : null))
       .then((data: { id?: string } | null) => {
