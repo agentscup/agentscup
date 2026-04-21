@@ -36,16 +36,19 @@ export default function FounderCard({ card, animated = true, scale = 1 }: Props)
         style={{ background: theme.glow }}
       />
 
-      {/* Card body */}
+      {/* Card body — fluid width: fills available space on narrow
+          phones (320-360px), caps at 320px on larger screens. Avoids
+          horizontal scroll on small viewports where the fixed 280px
+          + margins used to poke past the right edge. */}
       <div
-        className="relative w-[280px] sm:w-[320px] overflow-hidden"
+        className="relative w-[min(88vw,320px)] sm:w-[320px] overflow-hidden"
         style={{
           background: theme.bg,
           border: `4px solid ${theme.border}`,
           boxShadow: `
             inset -4px -4px 0 ${theme.borderDark},
             inset 4px 4px 0 ${theme.borderLight},
-            8px 8px 0 rgba(0,0,0,0.6)
+            6px 6px 0 rgba(0,0,0,0.6)
           `,
           imageRendering: "pixelated",
         }}

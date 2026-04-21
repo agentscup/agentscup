@@ -29,17 +29,18 @@ export default function LandingHero({ onStart, signInWith }: Props) {
   }, []);
 
   return (
-    <div className="relative flex flex-col items-center text-center min-h-[560px] justify-center pt-8 pb-16 animate-[hero-fade_600ms_cubic-bezier(0.16,1,0.3,1)_both]">
+    <div className="relative flex flex-col items-center text-center justify-center pt-6 pb-12 sm:pt-8 sm:pb-16 min-h-[480px] sm:min-h-[560px] animate-[hero-fade_600ms_cubic-bezier(0.16,1,0.3,1)_both]">
       <CounterBadge count={claimed} />
 
-      <div className="flex justify-center my-10">
+      <div className="flex justify-center my-6 sm:my-10">
         <div className="floating-trophy">
           <Image
             src="/trophy.svg"
             alt="Agents Cup"
-            width={120}
-            height={120}
-            className="drop-shadow-[0_0_56px_rgba(255,215,0,0.45)]"
+            width={96}
+            height={96}
+            sizes="(max-width: 640px) 84px, 120px"
+            className="drop-shadow-[0_0_40px_rgba(255,215,0,0.4)] sm:drop-shadow-[0_0_56px_rgba(255,215,0,0.45)] w-[84px] h-[84px] sm:w-[120px] sm:h-[120px]"
             priority
             style={{ imageRendering: "pixelated" }}
           />
@@ -47,16 +48,16 @@ export default function LandingHero({ onStart, signInWith }: Props) {
       </div>
 
       {/* Eyebrow */}
-      <div className="font-pixel text-[8px] sm:text-[10px] text-[#FFD700]/80 tracking-[0.5em] mb-5">
+      <div className="font-pixel text-[7px] sm:text-[10px] text-[#FFD700]/80 tracking-[0.45em] sm:tracking-[0.5em] mb-4 sm:mb-5">
         EARLY ACCESS
       </div>
 
       {/* Wordmark */}
       <h1
-        className="font-pixel text-[28px] sm:text-[56px] leading-none text-white mb-4 tracking-[0.05em]"
+        className="font-pixel text-[22px] sm:text-[56px] leading-none text-white mb-4 tracking-[0.05em] px-4"
         style={{
           textShadow:
-            "3px 3px 0 #0B6623, 6px 6px 0 rgba(0,0,0,0.55), 0 0 60px rgba(30,143,78,0.18)",
+            "2px 2px 0 #0B6623, 4px 4px 0 rgba(0,0,0,0.55), 0 0 60px rgba(30,143,78,0.18)",
         }}
       >
         FOUNDER&nbsp;CARD
@@ -67,9 +68,9 @@ export default function LandingHero({ onStart, signInWith }: Props) {
       {signInWith ?? (
         <button
           onClick={onStart}
-          className="group relative font-pixel text-[10px] sm:text-[12px] tracking-[0.4em] overflow-hidden"
+          className="group relative font-pixel text-[10px] sm:text-[12px] tracking-[0.35em] sm:tracking-[0.4em] overflow-hidden min-h-[52px] px-10 sm:px-14 active:translate-y-[3px]"
           style={{
-            padding: "20px 56px",
+            padding: "18px 40px",
             background: "linear-gradient(180deg, #FFD700 0%, #B8960C 100%)",
             color: "#1a1200",
             border: "3px solid #FFF4B0",
@@ -78,10 +79,8 @@ export default function LandingHero({ onStart, signInWith }: Props) {
             textShadow: "1px 1px 0 #FFF4B0",
             imageRendering: "pixelated",
             transition: "transform 180ms cubic-bezier(0.16, 1, 0.3, 1)",
+            touchAction: "manipulation",
           }}
-          onMouseDown={(e) => (e.currentTarget.style.transform = "translateY(4px)")}
-          onMouseUp={(e) => (e.currentTarget.style.transform = "translateY(0)")}
-          onMouseLeave={(e) => (e.currentTarget.style.transform = "translateY(0)")}
         >
           <span
             aria-hidden

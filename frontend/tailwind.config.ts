@@ -6,6 +6,18 @@ const config: Config = {
   ],
   darkMode: "class",
   theme: {
+    // Insert an `xs` breakpoint at 420px — Tailwind's default starts
+    // at `sm: 640px`, which leaves a dead zone on narrow phones
+    // (iPhone SE, small Androids). Used for layout tweaks that need
+    // to change between pocket-sized and standard mobile.
+    screens: {
+      xs: "420px",
+      sm: "640px",
+      md: "768px",
+      lg: "1024px",
+      xl: "1280px",
+      "2xl": "1536px",
+    },
     extend: {
       colors: {
         black: "#000000",

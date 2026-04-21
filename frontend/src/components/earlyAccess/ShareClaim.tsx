@@ -81,7 +81,7 @@ export default function ShareClaim({ card, shareUrl, onClaimed }: Props) {
   return (
     <div className="max-w-[440px] mx-auto w-full animate-[fade-up_500ms_cubic-bezier(0.16,1,0.3,1)_both]">
       <div
-        className="p-7 sm:p-8"
+        className="p-5 sm:p-8"
         style={{
           background: "rgba(10,30,10,0.5)",
           backdropFilter: "blur(8px)",
@@ -157,12 +157,13 @@ export default function ShareClaim({ card, shareUrl, onClaimed }: Props) {
                 value={tweetUrl}
                 onChange={(e) => setTweetUrl(e.target.value)}
                 placeholder="https://x.com/you/status/…"
-                className="w-full font-mono text-[11px] px-3.5 py-2.5 outline-none transition-colors duration-200"
+                className="w-full font-mono text-[10px] sm:text-[11px] px-3 sm:px-3.5 py-3 sm:py-2.5 outline-none transition-colors duration-200"
                 style={{
                   background: "rgba(0,0,0,0.4)",
                   border: "1px solid rgba(255,255,255,0.1)",
                   borderRadius: "2px",
                   color: "#fff",
+                  minHeight: 44,
                 }}
                 onFocus={(e) =>
                   (e.currentTarget.style.borderColor = "rgba(46,176,96,0.5)")
@@ -171,6 +172,7 @@ export default function ShareClaim({ card, shareUrl, onClaimed }: Props) {
                   (e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)")
                 }
                 autoComplete="off"
+                inputMode="url"
                 spellCheck={false}
               />
             </FieldLabel>
@@ -202,7 +204,7 @@ export default function ShareClaim({ card, shareUrl, onClaimed }: Props) {
                 value={walletAddress}
                 onChange={(e) => setWalletAddress(e.target.value)}
                 placeholder="0x..."
-                className="w-full font-mono text-[12px] px-3.5 py-2.5 outline-none transition-colors duration-200"
+                className="w-full font-mono text-[10px] sm:text-[12px] px-3 sm:px-3.5 py-3 sm:py-2.5 outline-none transition-colors duration-200"
                 style={{
                   background: "rgba(0,0,0,0.4)",
                   border: `1px solid ${
@@ -214,10 +216,12 @@ export default function ShareClaim({ card, shareUrl, onClaimed }: Props) {
                   }`,
                   borderRadius: "2px",
                   color: "#fff",
+                  minHeight: 44,
                 }}
                 autoComplete="off"
                 autoCapitalize="off"
                 spellCheck={false}
+                inputMode="text"
                 maxLength={42}
               />
             </FieldLabel>

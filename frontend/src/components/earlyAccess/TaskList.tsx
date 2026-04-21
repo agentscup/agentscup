@@ -174,9 +174,10 @@ function TaskRow({
     <button
       onClick={start}
       disabled={done}
-      className="group relative w-full text-left transition-all duration-300"
+      className="group relative w-full text-left transition-all duration-300 active:translate-x-[2px] sm:hover:translate-x-[2px]"
       style={{
-        padding: "16px 18px",
+        padding: "14px 14px",
+        minHeight: 64,
         background: done
           ? "rgba(46,176,96,0.08)"
           : "rgba(10,20,10,0.6)",
@@ -185,24 +186,13 @@ function TaskRow({
         borderLeftColor: accent,
         cursor: done ? "default" : "pointer",
         animationDelay: `${index * 60}ms`,
-      }}
-      onMouseEnter={(e) => {
-        if (!done) {
-          e.currentTarget.style.background = "rgba(15,30,15,0.8)";
-          e.currentTarget.style.transform = "translateX(2px)";
-        }
-      }}
-      onMouseLeave={(e) => {
-        if (!done) {
-          e.currentTarget.style.background = "rgba(10,20,10,0.6)";
-          e.currentTarget.style.transform = "translateX(0)";
-        }
+        touchAction: "manipulation",
       }}
     >
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-3 sm:gap-4">
         {/* Status indicator */}
         <div
-          className="shrink-0 w-8 h-8 flex items-center justify-center font-pixel text-[11px] transition-all duration-300"
+          className="shrink-0 w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center font-pixel text-[10px] sm:text-[11px] transition-all duration-300"
           style={{
             background: done ? "#2eb060" : "transparent",
             border: `1.5px solid ${accent}`,
@@ -215,12 +205,12 @@ function TaskRow({
 
         <div className="flex-1 min-w-0">
           <div
-            className="font-pixel text-[10px] tracking-[0.1em] mb-1 truncate"
+            className="font-pixel text-[9px] sm:text-[10px] tracking-[0.1em] mb-1 truncate"
             style={{ color: done ? "#7fc878" : "#fff" }}
           >
             {def.title}
           </div>
-          <div className="text-[11px] text-white/45 truncate leading-relaxed">
+          <div className="text-[10px] sm:text-[11px] text-white/45 truncate leading-relaxed">
             {done
               ? "Completed"
               : counting != null

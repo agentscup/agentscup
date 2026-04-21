@@ -71,7 +71,7 @@ export default function CardReveal({ card, onComplete }: Props) {
   }[phase];
 
   return (
-    <div className="relative flex items-center justify-center min-h-[620px] w-full overflow-hidden">
+    <div className="relative flex items-center justify-center w-full overflow-hidden min-h-[520px] sm:min-h-[620px]">
       {/* Atmospheric halo — single layer, opacity-driven */}
       <div
         aria-hidden
@@ -253,7 +253,7 @@ function SealedPack({
 }) {
   return (
     <div
-      className="w-[280px] sm:w-[320px] h-[430px] sm:h-[490px] relative overflow-hidden"
+      className="w-[min(82vw,320px)] sm:w-[320px] aspect-[280/430] sm:aspect-[320/490] max-h-[72vh] relative overflow-hidden"
       style={{
         background:
           "linear-gradient(160deg, #0c1e0c 0%, #0a1a0a 50%, #060f06 100%)",

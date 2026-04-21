@@ -139,14 +139,12 @@ function Row({
 }) {
   const rarityColor = RARITY_COLORS[row.rarity];
   const avatarSize = compact ? 28 : 36;
-  const padding = compact ? "6px 10px" : "10px 14px";
   const isPodium = row.rank <= 3;
 
   return (
     <div
-      className="relative flex items-center gap-3 transition-colors duration-200"
+      className="relative flex items-center gap-2.5 sm:gap-3 transition-colors duration-200 px-2.5 py-2 sm:px-3.5 sm:py-2.5"
       style={{
-        padding,
         background: highlighted
           ? "rgba(255,215,0,0.08)"
           : "rgba(10,20,10,0.4)",
@@ -157,9 +155,9 @@ function Row({
     >
       {/* Rank */}
       <div
-        className="shrink-0 w-8 text-center font-pixel tracking-[0.05em]"
+        className="shrink-0 w-6 sm:w-8 text-center font-pixel tracking-[0.05em]"
         style={{
-          fontSize: isPodium ? "13px" : "10px",
+          fontSize: isPodium ? "12px" : "9px",
           color: isPodium
             ? ["#FFD700", "#E0E0E0", "#CD7F32"][row.rank - 1]
             : "rgba(255,255,255,0.4)",
@@ -203,15 +201,18 @@ function Row({
         >
           {row.displayName}
         </div>
-        <div className="text-[10px] text-white/40 truncate leading-tight mt-0.5">
-          @{row.handle} · {formatFollowers(row.followerCount)} followers
+        <div className="text-[9px] sm:text-[10px] text-white/40 truncate leading-tight mt-0.5">
+          <span className="hidden sm:inline">@{row.handle} · </span>
+          {formatFollowers(row.followerCount)}
+          <span className="hidden sm:inline"> followers</span>
         </div>
       </div>
 
-      {/* OVR + rarity */}
-      <div className="shrink-0 flex items-center gap-2.5">
+      {/* OVR + rarity — rarity pill hides on very narrow so OVR
+          always stays visible and the row never wraps */}
+      <div className="shrink-0 flex items-center gap-2 sm:gap-2.5">
         <div
-          className="font-pixel text-[6px] tracking-[0.25em] px-1.5 py-0.5"
+          className="hidden xs:block font-pixel text-[6px] tracking-[0.25em] px-1.5 py-0.5"
           style={{
             color: rarityColor,
             border: `1px solid ${rarityColor}60`,
@@ -223,8 +224,8 @@ function Row({
         <div
           className="font-pixel text-center"
           style={{
-            minWidth: compact ? 28 : 34,
-            fontSize: compact ? "14px" : "16px",
+            minWidth: compact ? 24 : 30,
+            fontSize: compact ? "13px" : "15px",
             fontWeight: 700,
             color: "#fff",
             textShadow: `2px 2px 0 ${rarityColor}60`,

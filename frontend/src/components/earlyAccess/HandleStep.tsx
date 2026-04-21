@@ -31,7 +31,7 @@ export default function HandleStep({ onSubmit }: Props) {
   return (
     <div className="max-w-md mx-auto w-full animate-[fade-up_0.4s_ease-out]">
       <div
-        className="p-6 sm:p-8"
+        className="p-5 sm:p-8"
         style={{
           background: "linear-gradient(180deg, #0f2a0f 0%, #0a1e0a 100%)",
           border: "3px solid #1E8F4E",

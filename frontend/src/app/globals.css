@@ -26,12 +26,34 @@
 }
 
 /* ── Base styles ───────────────────────────────────── */
+html, body {
+  /* Hard guard against accidental horizontal scroll from decorative
+     absolute-positioned elements (halo circles, scan lines, etc.)
+     bleeding past the viewport on narrow phones. */
+  overflow-x: hidden;
+}
+
 body {
   background-color: #061206;
   color: #d4e4d4;
   font-family: var(--font-body);
   min-height: 100vh;
   image-rendering: pixelated;
+  /* Honour the iOS safe-area insets so the layout doesn't sit under
+     the home-indicator or the notch when installed to the home
+     screen. Individual page containers can still opt in to extra
+     padding via env(safe-area-inset-*). */
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-top: env(safe-area-inset-top);
+  /* Better tap responsiveness on iOS — removes the 300ms delay that
+     some Safari versions still add for double-tap zoom detection. */
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Disable the user-select blue flash on decorative elements so
+   long-pressing a background pixel doesn't light up a selection. */
+.scanlines, .pixel-card, button {
+  -webkit-touch-callout: none;
 }
 
 h1, h2, h3, h4, h5, h6 {
