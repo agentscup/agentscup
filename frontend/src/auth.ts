@@ -45,7 +45,10 @@ if (process.env.X_CLIENT_ID && process.env.X_CLIENT_SECRET) {
       userinfo: {
         url: "https://api.twitter.com/2/users/me",
         params: {
-          "user.fields": "id,name,username,profile_image_url",
+          // Pull follower count + created_at so the rarity engine can
+          // weight big accounts heavily without an extra API call.
+          "user.fields":
+            "id,name,username,profile_image_url,public_metrics,created_at",
         },
       },
       profile(raw) {
@@ -55,20 +58,21 @@ if (process.env.X_CLIENT_ID && process.env.X_CLIENT_SECRET) {
             name?: string;
             username?: string;
             profile_image_url?: string;
+            public_metrics?: { followers_count?: number };
+            created_at?: string;
           };
           id?: string;
           name?: string;
           username?: string;
           profile_image_url?: string;
+          public_metrics?: { followers_count?: number };
+          created_at?: string;
           title?: string;
           detail?: string;
           status?: number;
         };
         const data = src.data ?? src;
         if (!data?.id) {
-          // Surface the upstream error verbatim so rate-limit / 403
-          // / scope-mismatch problems show up in server logs
-          // instead of a generic Auth.js 500.
           console.error(
             "[auth] X /2/users/me response missing id:",
             JSON.stringify(raw)
@@ -79,12 +83,18 @@ if (process.env.X_CLIENT_ID && process.env.X_CLIENT_SECRET) {
               : "X /2/users/me returned no user data";
           throw new Error(`X profile parse failed — ${reason}`);
         }
+        // Stash the metrics-bearing fields under custom keys so the
+        // jwt callback can lift them onto the session without a
+        // second X API call.
         return {
           id: String(data.id),
           name: data.name ?? data.username ?? null,
           email: null,
           image: data.profile_image_url ?? null,
-        };
+          xUsername: data.username,
+          xFollowerCount: data.public_metrics?.followers_count ?? 0,
+          xCreatedAt: data.created_at,
+        } as unknown as { id: string; name: string | null; email: null; image: string | null };
       },
     })
   );
@@ -99,6 +109,8 @@ declare module "next-auth" {
     xUserId?: string;
     xHandle?: string;
     xAvatarUrl?: string;
+    xFollowerCount?: number;
+    xAccountAgeDays?: number;
   }
 }
 declare module "@auth/core/jwt" {
@@ -106,6 +118,8 @@ declare module "@auth/core/jwt" {
     xUserId?: string;
     xHandle?: string;
     xAvatarUrl?: string;
+    xFollowerCount?: number;
+    xAccountAgeDays?: number;
   }
 }
 
@@ -120,21 +134,72 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       // On first sign-in the OAuth profile carries the raw X payload.
       // We thread it through to the session via token fields.
       const raw = profile as
-        | { data?: { id?: string; username?: string; profile_image_url?: string } }
+        | {
+            data?: {
+              id?: string;
+              username?: string;
+              profile_image_url?: string;
+              public_metrics?: { followers_count?: number };
+              created_at?: string;
+            };
+          }
         | undefined;
-      const data = raw?.data ?? (raw as typeof raw & { id?: string; username?: string; profile_image_url?: string });
+      const data =
+        raw?.data ??
+        (raw as typeof raw & {
+          id?: string;
+          username?: string;
+          profile_image_url?: string;
+          public_metrics?: { followers_count?: number };
+          created_at?: string;
+        });
       if (data?.id) token.xUserId = String(data.id);
       if (data?.username) token.xHandle = data.username;
       if (data?.profile_image_url) token.xAvatarUrl = data.profile_image_url;
-      // Belt + braces — if the provider's `profile()` already returned
-      // a `user` object, mirror its id into our field.
+      if (typeof data?.public_metrics?.followers_count === "number") {
+        token.xFollowerCount = data.public_metrics.followers_count;
+      }
+      if (data?.created_at) {
+        const t = Date.parse(data.created_at);
+        if (!Number.isNaN(t)) {
+          token.xAccountAgeDays = Math.max(
+            0,
+            Math.floor((Date.now() - t) / 86_400_000)
+          );
+        }
+      }
+      // Belt + braces fallback for the user.id from profile().
       if (!token.xUserId && user?.id) token.xUserId = user.id;
+      // The custom keys we returned from profile() are mirrored on
+      // the user object — pick them up if they made it through.
+      const u = user as
+        | (typeof user & {
+            xUsername?: string;
+            xFollowerCount?: number;
+            xCreatedAt?: string;
+          })
+        | undefined;
+      if (!token.xHandle && u?.xUsername) token.xHandle = u.xUsername;
+      if (token.xFollowerCount == null && typeof u?.xFollowerCount === "number") {
+        token.xFollowerCount = u.xFollowerCount;
+      }
+      if (token.xAccountAgeDays == null && u?.xCreatedAt) {
+        const t = Date.parse(u.xCreatedAt);
+        if (!Number.isNaN(t)) {
+          token.xAccountAgeDays = Math.max(
+            0,
+            Math.floor((Date.now() - t) / 86_400_000)
+          );
+        }
+      }
       return token;
     },
     async session({ session, token }) {
       session.xUserId = token.xUserId;
       session.xHandle = token.xHandle;
       session.xAvatarUrl = token.xAvatarUrl;
+      session.xFollowerCount = token.xFollowerCount;
+      session.xAccountAgeDays = token.xAccountAgeDays;
       return session;
     },
   },

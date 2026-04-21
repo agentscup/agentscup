@@ -28,7 +28,6 @@ type Phase =
   | "claimed";
 
 const EMPTY_TASKS: TaskState = {
-  followBase: false,
   followAgentsCup: false,
   notificationsOn: false,
   replyPinned: false,
@@ -62,11 +61,10 @@ export default function EarlyAccessPage() {
       .then((data: (Partial<XSignals> & { followsAgentsCup?: boolean }) | null) => {
         if (data) {
           setRealSignals(data);
-          // Pre-seed task toggles from real signals so the meter
-          // reflects what we already know about the user.
+          // Pre-seed the @agentscup follow toggle when we already
+          // know the user follows us.
           setTasks((t) => ({
             ...t,
-            followBase: !!data.followsBase,
             followAgentsCup: !!data.followsAgentsCup,
           }));
         }
@@ -96,12 +94,12 @@ export default function EarlyAccessPage() {
         upgradeAvatarUrl(
           `https://unavatar.io/twitter/${encodeURIComponent(handle)}`
         ),
+      // Mock-mode default keeps unauthenticated walkthroughs in the
+      // RARE bracket. Real OAuth users get their actual follower
+      // count from /api/early-access/me which lifts them into EPIC /
+      // LEGENDARY when they qualify.
       followerCount: realSignals?.followerCount ?? 500,
       accountAgeDays: realSignals?.accountAgeDays ?? 800,
-      followsBase: tasks.followBase,
-      bioMentionsBase: !!realSignals?.bioMentionsBase,
-      baseTweetHits:
-        (realSignals?.baseTweetHits ?? 0) + (tasks.replyPinned ? 1 : 0),
     };
   }
 
@@ -109,6 +107,7 @@ export default function EarlyAccessPage() {
     const signals = buildSignals();
     const generated = generateCard(signals);
 
+    // Layer task bonuses on top of the follower-driven base score.
     let extra = 0;
     const extraBreak: FounderCardT["signalBreakdown"] = [];
     if (tasks.followAgentsCup) {
@@ -118,6 +117,10 @@ export default function EarlyAccessPage() {
     if (tasks.notificationsOn) {
       extra += 10;
       extraBreak.push({ label: "Notifications on", points: 10 });
+    }
+    if (tasks.replyPinned) {
+      extra += 15;
+      extraBreak.push({ label: "Replied to pinned post", points: 15 });
     }
     if (extra > 0) {
       generated.score += extra;

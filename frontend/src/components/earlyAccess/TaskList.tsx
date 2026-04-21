@@ -5,7 +5,6 @@ import type { Rarity } from "@/lib/earlyAccess/cardGen";
 import { scoreToRarity } from "@/lib/earlyAccess/cardGen";
 
 export interface TaskState {
-  followBase: boolean;
   followAgentsCup: boolean;
   notificationsOn: boolean;
   replyPinned: boolean;
@@ -32,15 +31,6 @@ interface TaskDef {
 }
 
 const TASKS: TaskDef[] = [
-  {
-    key: "followBase",
-    title: "Follow @base",
-    subtitle: "Biggest boost — we build on Base.",
-    points: 50,
-    intent: "https://twitter.com/intent/follow?screen_name=base",
-    accent: "#00AEEF",
-    badge: "BIGGEST",
-  },
   {
     key: "followAgentsCup",
     title: "Follow @agentscup",
@@ -82,9 +72,12 @@ export default function TaskList({
   onReveal,
   handleJitter,
 }: Props) {
+  // Note: tasks contribute up to +40 here. The bigger lever is
+  // follower count (computed server-side at reveal time, +10 to +85).
+  // The meter intentionally only previews task-driven movement —
+  // real follower bonuses appear in the score when the card reveals.
   const score = useMemo(() => {
     let s = handleJitter;
-    if (tasks.followBase) s += 50;
     if (tasks.followAgentsCup) s += 15;
     if (tasks.notificationsOn) s += 10;
     if (tasks.replyPinned) s += 15;
@@ -92,7 +85,7 @@ export default function TaskList({
   }, [tasks, handleJitter]);
 
   const rarity = scoreToRarity(score);
-  const maxScore = handleJitter + 50 + 15 + 10 + 15;
+  const maxScore = handleJitter + 15 + 10 + 15;
 
   const tasksDone = TASKS.every((t) => tasks[t.key]);
   const remaining = TASKS.filter((t) => !tasks[t.key]).length;

@@ -58,22 +58,21 @@ export function computeRarityScore(s: XSignals): {
 } {
   const breakdown: Array<{ label: string; points: number }> = [];
 
-  if (s.followsBase) {
-    breakdown.push({ label: "Follows @base", points: 50 });
-  }
-  if (s.bioMentionsBase) {
-    breakdown.push({ label: "Base in bio", points: 25 });
-  }
-  const tweetHits = Math.min(s.baseTweetHits ?? 0, 10);
-  if (tweetHits > 0) {
-    breakdown.push({ label: `${tweetHits} Base tweet${tweetHits === 1 ? "" : "s"}`, points: tweetHits * 3 });
-  }
+  // Follower count is the dominant signal — big accounts get
+  // legendary-tier cards even before completing tasks. Tier
+  // breakpoints chosen so a 10k+ account + all three tasks lands
+  // comfortably in LEGENDARY range.
   const followers = s.followerCount ?? 0;
-  if (followers >= 10_000) {
-    breakdown.push({ label: "10k+ followers", points: 10 });
+  if (followers >= 100_000) {
+    breakdown.push({ label: "100k+ followers", points: 85 });
+  } else if (followers >= 10_000) {
+    breakdown.push({ label: "10k+ followers", points: 60 });
   } else if (followers >= 1_000) {
-    breakdown.push({ label: "1k+ followers", points: 5 });
+    breakdown.push({ label: "1k+ followers", points: 25 });
+  } else if (followers >= 100) {
+    breakdown.push({ label: "100+ followers", points: 10 });
   }
+
   if ((s.accountAgeDays ?? 0) >= 365) {
     breakdown.push({ label: "1yr+ account", points: 5 });
   }

@@ -131,7 +131,7 @@ export default function ShareClaim({ card, shareUrl, onClaimed }: Props) {
           <form onSubmit={claim} className="mt-5 space-y-3 animate-[fade-up_0.3s_ease-out]">
             <label className="block">
               <span className="font-pixel text-[7px] text-white/60 tracking-wider block mb-2">
-                TWEET URL (OPTIONAL)
+                TWEET URL
               </span>
               <input
                 type="url"

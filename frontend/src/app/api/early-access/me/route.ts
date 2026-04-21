@@ -4,19 +4,14 @@ import { auth } from "@/auth";
 /**
  * GET /api/early-access/me
  *
- * Returns just enough identity data to bootstrap the card for a
- * signed-in user. Deliberately does NOT hit the X API — at launch
- * volume (thousands of signups / hour) the /following and /tweets
- * endpoints would blow through rate limits within minutes.
+ * Returns the signed-in user's identity + the follower count / account
+ * age the rarity engine needs. Everything comes from the session that
+ * Auth.js populated during sign-in (Twitter provider's userinfo call
+ * in the OAuth handshake) — there are zero extra X API calls in this
+ * endpoint, so it scales to launch-hour load comfortably.
  *
- * Instead, all Base-signal bonuses are earned on the client through
- * trust-based task completion. An async verification worker on the
- * backend re-checks each claim in a batched pace (75 req / 15 min)
- * and flags inconsistencies out-of-band — users who lie about
- * following @base get their card downgraded to COMMON rarity in the
- * hours after claim without ever blocking the signup flow.
- *
- * Cost per user during signup: 0 X API calls.
+ * Tasks remain trust-based; the async verifier worker re-checks them
+ * out-of-band post-claim.
  */
 export async function GET() {
   const session = await auth();
@@ -24,6 +19,8 @@ export async function GET() {
     xUserId?: string;
     xHandle?: string;
     xAvatarUrl?: string;
+    xFollowerCount?: number;
+    xAccountAgeDays?: number;
   };
 
   if (!s?.xUserId || !s.xHandle) {
@@ -35,14 +32,11 @@ export async function GET() {
     handle: s.xHandle.toLowerCase(),
     displayName: s.xHandle,
     avatarUrl: s.xAvatarUrl,
-    // Signals are populated by the async verification worker, not here.
-    // Client-side they default to false and flip when the user completes
-    // the corresponding task in TaskList.
-    followsBase: false,
+    followerCount: s.xFollowerCount ?? 0,
+    accountAgeDays: s.xAccountAgeDays ?? 0,
+    // Tasks stay trust-based; verifier worker reconciles later.
     followsAgentsCup: false,
     bioMentionsBase: false,
     baseTweetHits: 0,
-    followerCount: 0,
-    accountAgeDays: 0,
   });
 }
