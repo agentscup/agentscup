@@ -21,7 +21,6 @@ import { supabase } from "../lib/supabase";
 const X_API = "https://api.x.com/2";
 const BEARER = process.env.X_BEARER_TOKEN;
 const BATCH_SIZE = Number(process.env.VERIFIER_BATCH_SIZE ?? 50);
-const FOLLOW_PAGE_LIMIT = 5; // up to 5 * 1000 follows
 
 interface ClaimRow {
   id: string;
@@ -60,16 +59,12 @@ async function main() {
 
   console.log(`[verifier] processing ${rows.length} pending claims`);
 
-  // Resolve @base + @agentscup once; cached across the whole batch.
-  const baseId = await resolveUserId("base");
-  const agentsCupId = await resolveUserId("agentscup");
-
   let verifiedCount = 0;
   let flaggedCount = 0;
 
   for (const row of rows as ClaimRow[]) {
     try {
-      const result = await verifyOne(row, baseId, agentsCupId);
+      const result = await verifyOne(row);
       if (result.status === "verified") verifiedCount++;
       else flaggedCount++;
 
@@ -96,11 +91,7 @@ async function main() {
   );
 }
 
-async function verifyOne(
-  row: ClaimRow,
-  baseId: string | null,
-  agentsCupId: string | null
-): Promise<{
+async function verifyOne(row: ClaimRow): Promise<{
   status: "verified" | "flagged";
   correctedRarity?: string;
   correctedScore?: number;
@@ -121,37 +112,22 @@ async function verifyOne(
     }
   }
 
-  // 2. If the user said they followed @base, check it.
-  let followsBaseReal = false;
-  if (claimedTasks.followBase && baseId) {
-    followsBaseReal = await checkFollows(row.x_user_id, baseId);
-  }
-
-  // 3. If they said they followed @agentscup, check it.
-  let followsAgentsCupReal = false;
-  if (claimedTasks.followAgentsCup && agentsCupId) {
-    followsAgentsCupReal = await checkFollows(row.x_user_id, agentsCupId);
-  }
-
-  // Score reconciliation — rebuild from real signals + any tasks we
-  // can't cheaply verify server-side (notifications, reply).
+  // All three tasks (notifications, like, reply) are honour-system —
+  // X API has no cheap endpoint to confirm a notification toggle or a
+  // like on a specific tweet without more scopes than we ask for.
+  // They count when the user ticked them AND the share tweet is legit.
   let score = jitter(row.x_handle);
   const tasks = claimedTasks;
-  if (followsBaseReal) score += 50;
-  if (followsAgentsCupReal) score += 15;
-  // Notifications + reply-pinned remain honour-system; count them if
-  // the user checked them, but only when the tweet itself is legit.
   if (tweetOk && tasks.notificationsOn) score += 10;
+  if (tweetOk && tasks.likePinned) score += 15;
   if (tweetOk && tasks.replyPinned) score += 15;
 
   const rarity = scoreToRarity(score);
 
-  // Flag when the user lied about a task (gap between original score
-  // and verified score is meaningful) or the tweet is gone entirely.
-  const lied = claimedTasks.followBase && !followsBaseReal;
+  // Flag only when the share tweet is gone — the other signals can't
+  // be cheaply cross-checked.
   const tweetGone = !!row.claimed_tweet_url && !tweetOk;
-
-  const status: "verified" | "flagged" = lied || tweetGone ? "flagged" : "verified";
+  const status: "verified" | "flagged" = tweetGone ? "flagged" : "verified";
 
   return {
     status,
@@ -173,42 +149,6 @@ async function xGet<T>(path: string): Promise<T> {
     throw new Error(`X API ${res.status}: ${text.slice(0, 120)}`);
   }
   return (await res.json()) as T;
-}
-
-async function resolveUserId(username: string): Promise<string | null> {
-  try {
-    const data = await xGet<{ data: { id: string } }>(
-      `/users/by/username/${encodeURIComponent(username)}`
-    );
-    return data.data.id;
-  } catch {
-    return null;
-  }
-}
-
-async function checkFollows(sourceId: string, targetId: string): Promise<boolean> {
-  let pageToken: string | undefined;
-  for (let page = 0; page < FOLLOW_PAGE_LIMIT; page++) {
-    const qs = new URLSearchParams({
-      max_results: "1000",
-      "user.fields": "id",
-    });
-    if (pageToken) qs.set("pagination_token", pageToken);
-    try {
-      const data = await xGet<{
-        data?: Array<{ id: string }>;
-        meta?: { next_token?: string };
-      }>(`/users/${sourceId}/following?${qs}`);
-
-      if (data.data?.some((u) => u.id === targetId)) return true;
-      pageToken = data.meta?.next_token;
-      if (!pageToken) return false;
-    } catch {
-      // Rate-limited mid-scan — bail; we'll retry next run.
-      return false;
-    }
-  }
-  return false;
 }
 
 // ─────────────────────────────────────────────────────────────────────

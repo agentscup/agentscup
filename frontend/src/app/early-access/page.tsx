@@ -29,8 +29,8 @@ type Phase =
   | "claimed";
 
 const EMPTY_TASKS: TaskState = {
-  followAgentsCup: false,
   notificationsOn: false,
+  likePinned: false,
   replyPinned: false,
 };
 
@@ -111,8 +111,8 @@ export default function EarlyAccessPage() {
             if (data.claimId) setClaimId(data.claimId);
             if (data.tasks) {
               setTasks({
-                followAgentsCup: !!data.tasks.followAgentsCup,
                 notificationsOn: !!data.tasks.notificationsOn,
+                likePinned: !!data.tasks.likePinned,
                 replyPinned: !!data.tasks.replyPinned,
               });
             }
@@ -152,14 +152,8 @@ export default function EarlyAccessPage() {
     setPhase("loading");
     fetch("/api/early-access/me")
       .then((r) => (r.ok ? r.json() : null))
-      .then((data: (Partial<XSignals> & { followsAgentsCup?: boolean }) | null) => {
-        if (data) {
-          setRealSignals(data);
-          setTasks((t) => ({
-            ...t,
-            followAgentsCup: !!data.followsAgentsCup,
-          }));
-        }
+      .then((data: Partial<XSignals> | null) => {
+        if (data) setRealSignals(data);
         setPhase("tasks");
       })
       .catch(() => setPhase("tasks"));
@@ -214,13 +208,13 @@ export default function EarlyAccessPage() {
     // Layer task bonuses on top of the follower-driven base score.
     let extra = 0;
     const extraBreak: FounderCardT["signalBreakdown"] = [];
-    if (tasks.followAgentsCup) {
-      extra += 15;
-      extraBreak.push({ label: "Follows @agentscup", points: 15 });
-    }
     if (tasks.notificationsOn) {
       extra += 10;
       extraBreak.push({ label: "Notifications on", points: 10 });
+    }
+    if (tasks.likePinned) {
+      extra += 15;
+      extraBreak.push({ label: "Liked pinned post", points: 15 });
     }
     if (tasks.replyPinned) {
       extra += 15;

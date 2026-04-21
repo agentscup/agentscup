@@ -5,9 +5,28 @@ import type { Rarity } from "@/lib/earlyAccess/cardGen";
 import { scoreToRarity } from "@/lib/earlyAccess/cardGen";
 
 export interface TaskState {
-  followAgentsCup: boolean;
   notificationsOn: boolean;
+  likePinned: boolean;
   replyPinned: boolean;
+}
+
+/**
+ * Drop-in target for the @agentscup pinned launch post. When empty,
+ * like / reply tasks fall back to opening the profile so the player
+ * can find the post manually. Set once the canonical tweet exists
+ * and both tasks will deep-link straight into the X intent dialog.
+ *
+ * Paste the numeric id from the tweet URL — the one after `/status/`.
+ */
+const PINNED_TWEET_ID = ""; // e.g. "1809123456789012345"
+const AGENTSCUP_PROFILE = "https://x.com/agentscup";
+
+function pinnedIntent(action: "like" | "reply"): string {
+  if (!PINNED_TWEET_ID) return AGENTSCUP_PROFILE;
+  if (action === "like") {
+    return `https://twitter.com/intent/like?tweet_id=${PINNED_TWEET_ID}`;
+  }
+  return `https://twitter.com/intent/tweet?in_reply_to=${PINNED_TWEET_ID}`;
 }
 
 interface Props {
@@ -32,29 +51,27 @@ interface TaskDef {
 
 const TASKS: TaskDef[] = [
   {
-    key: "followAgentsCup",
-    title: "Follow @agentscup",
-    subtitle: "Stay in the loop on drops and updates.",
-    points: 15,
-    intent: "https://twitter.com/intent/follow?screen_name=agentscup",
-    accent: "#1E8F4E",
+    key: "notificationsOn",
+    title: "Turn on @agentscup notifications",
+    subtitle: "Tap the bell on our profile — don't miss launch day.",
+    points: 10,
+    intent: AGENTSCUP_PROFILE,
+    accent: "#b068ff",
   },
   {
-    key: "notificationsOn",
-    title: "Turn on notifications",
-    subtitle: "So you don't miss launch day.",
-    points: 10,
-    intent: "https://x.com/agentscup",
-    accent: "#b068ff",
+    key: "likePinned",
+    title: "Like our pinned post",
+    subtitle: "Quick tap, big rarity boost.",
+    points: 15,
+    intent: pinnedIntent("like"),
+    accent: "#FF3B8A",
   },
   {
     key: "replyPinned",
     title: "Reply to our pinned post",
     subtitle: "Drop an emoji. Any emoji.",
     points: 15,
-    intent:
-      "https://twitter.com/intent/tweet?text=" +
-      encodeURIComponent("🏆 #AgentsCup @agentscup"),
+    intent: pinnedIntent("reply"),
     accent: "#FFD700",
   },
 ];
@@ -72,20 +89,20 @@ export default function TaskList({
   onReveal,
   handleJitter,
 }: Props) {
-  // Note: tasks contribute up to +40 here. The bigger lever is
-  // follower count (computed server-side at reveal time, +10 to +85).
-  // The meter intentionally only previews task-driven movement —
-  // real follower bonuses appear in the score when the card reveals.
+  // Tasks contribute up to +40 here. The bigger lever is follower
+  // count (computed server-side at reveal time, +10 to +85). The
+  // meter intentionally only previews task-driven movement — real
+  // follower bonuses appear in the score when the card reveals.
   const score = useMemo(() => {
     let s = handleJitter;
-    if (tasks.followAgentsCup) s += 15;
     if (tasks.notificationsOn) s += 10;
+    if (tasks.likePinned) s += 15;
     if (tasks.replyPinned) s += 15;
     return s;
   }, [tasks, handleJitter]);
 
   const rarity = scoreToRarity(score);
-  const maxScore = handleJitter + 15 + 10 + 15;
+  const maxScore = handleJitter + 10 + 15 + 15;
 
   const tasksDone = TASKS.every((t) => tasks[t.key]);
   const remaining = TASKS.filter((t) => !tasks[t.key]).length;
