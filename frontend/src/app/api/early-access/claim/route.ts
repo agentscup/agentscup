@@ -120,15 +120,29 @@ export async function POST(req: Request) {
       verificationStatus = "verified";
     } catch (err) {
       const e = err as { status?: number };
-      // Hard client errors (malformed request) still fail the claim.
-      if (e.status && e.status >= 400 && e.status < 500 && e.status !== 429) {
+      // Treat 401 (expired / rotated Bearer Token), 429 (rate-limit),
+      // 5xx, and timeouts as transient — the claim goes through with
+      // `verification_status: pending` and the async worker will
+      // confirm the tweet later when the app credentials are healthy.
+      //
+      // Only genuine client errors (400 malformed, 404 tweet missing)
+      // hard-fail, because those mean the input itself is bad, not
+      // our token.
+      const isTransient =
+        !e.status ||
+        e.status === 401 ||
+        e.status === 403 ||
+        e.status === 429 ||
+        e.status === 408 ||
+        e.status >= 500;
+      if (!isTransient) {
         return NextResponse.json(
           { error: err instanceof Error ? err.message : "Tweet lookup failed" },
           { status: 400 }
         );
       }
-      // Transient failures (timeout, rate-limit, 5xx): accept and
-      // let the async worker verify. Status stays `pending`.
+      // Transient failures: accept and let the async worker verify.
+      // Status stays `pending`.
     }
   }
 
