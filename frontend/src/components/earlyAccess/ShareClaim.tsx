@@ -79,115 +79,157 @@ export default function ShareClaim({ card, shareUrl, onClaimed }: Props) {
   }
 
   return (
-    <div className="max-w-md mx-auto w-full animate-[fade-up_0.4s_ease-out]">
+    <div className="max-w-[440px] mx-auto w-full animate-[fade-up_500ms_cubic-bezier(0.16,1,0.3,1)_both]">
       <div
-        className="p-6 sm:p-8"
+        className="p-7 sm:p-8"
         style={{
-          background: "linear-gradient(180deg, #0f2a0f 0%, #0a1e0a 100%)",
-          border: "3px solid #1E8F4E",
-          boxShadow:
-            "inset -3px -3px 0 #0B6623, inset 3px 3px 0 #2eb060, 6px 6px 0 rgba(0,0,0,0.5)",
+          background: "rgba(10,30,10,0.5)",
+          backdropFilter: "blur(8px)",
+          border: "1px solid rgba(46,176,96,0.25)",
+          borderRadius: "2px",
         }}
       >
-        <h2
-          className="font-pixel text-[10px] sm:text-xs text-white text-center mb-2 tracking-wider"
-          style={{ textShadow: "2px 2px 0 #0B6623" }}
-        >
-          SHARE TO CLAIM YOUR SPOT
-        </h2>
-        <p className="text-[12px] sm:text-sm text-white/60 text-center mb-6 leading-relaxed">
-          Post your card on X and you&apos;re in. Takes 15 seconds.
-        </p>
+        <div className="text-center mb-7">
+          <div className="font-pixel text-[7px] text-[#7fc878]/70 tracking-[0.45em] mb-3">
+            STEP TWO
+          </div>
+          <h2
+            className="font-pixel text-sm sm:text-base text-white tracking-[0.1em] mb-2"
+            style={{ textShadow: "2px 2px 0 #0B6623" }}
+          >
+            SHARE TO CLAIM
+          </h2>
+          <p className="text-[12px] text-white/45 leading-relaxed">
+            Post your card on X, paste the link, drop your wallet.
+          </p>
+        </div>
 
         <button
           onClick={openX}
-          className="group w-full relative overflow-hidden font-pixel text-[10px] sm:text-[11px] tracking-[0.25em]"
+          className="group w-full relative overflow-hidden font-pixel text-[10px] tracking-[0.35em] transition-transform duration-200"
           style={{
             padding: "16px 20px",
-            background: "linear-gradient(180deg, #1DA1F2 0%, #0d7dc0 100%)",
+            background: "#000",
             color: "#fff",
-            border: "3px solid #7fcfff",
-            boxShadow:
-              "inset -3px -3px 0 #004870, inset 3px 3px 0 #7fcfff, 4px 4px 0 rgba(0,0,0,0.6)",
-            textShadow: "1px 1px 0 #004870",
+            border: "1px solid rgba(255,255,255,0.15)",
+            borderRadius: "2px",
           }}
+          onMouseDown={(e) => (e.currentTarget.style.transform = "translateY(2px)")}
+          onMouseUp={(e) => (e.currentTarget.style.transform = "translateY(0)")}
+          onMouseLeave={(e) => (e.currentTarget.style.transform = "translateY(0)")}
         >
           <span
             aria-hidden
-            className="absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity"
+            className="absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-300"
             style={{
               background:
-                "linear-gradient(135deg, transparent 40%, rgba(255,255,255,0.4) 50%, transparent 60%)",
-              backgroundSize: "200% 200%",
-              animation: "shine 1.2s linear infinite",
+                "linear-gradient(120deg, transparent 35%, rgba(255,255,255,0.08) 50%, transparent 65%)",
+              backgroundSize: "250% 250%",
+              animation: "shine 1.6s linear infinite",
             }}
           />
-          <span className="relative">
-            {phase === "idle" ? "POST ON X ↗" : "REOPEN X ↗"}
+          <span className="relative inline-flex items-center justify-center gap-3">
+            {phase === "idle" ? (
+              <>
+                <XGlyph />
+                POST ON X
+              </>
+            ) : (
+              <>
+                <XGlyph />
+                REOPEN X
+              </>
+            )}
           </span>
         </button>
 
         {phase !== "idle" && (
-          <form onSubmit={claim} className="mt-5 space-y-3 animate-[fade-up_0.3s_ease-out]">
-            <label className="block">
-              <span className="font-pixel text-[7px] text-white/60 tracking-wider block mb-2">
-                TWEET URL
-              </span>
+          <form
+            onSubmit={claim}
+            className="mt-6 space-y-4 animate-[fade-up_400ms_cubic-bezier(0.16,1,0.3,1)_both]"
+          >
+            <FieldLabel
+              label="Tweet URL"
+              hint="Paste the link to your shared post"
+            >
               <input
                 type="url"
                 value={tweetUrl}
                 onChange={(e) => setTweetUrl(e.target.value)}
                 placeholder="https://x.com/you/status/…"
-                className="w-full font-pixel text-[10px] px-3 py-2 outline-none"
+                className="w-full font-mono text-[11px] px-3.5 py-2.5 outline-none transition-colors duration-200"
                 style={{
-                  background: "#000",
-                  border: "2px solid #1E8F4E",
+                  background: "rgba(0,0,0,0.4)",
+                  border: "1px solid rgba(255,255,255,0.1)",
+                  borderRadius: "2px",
                   color: "#fff",
-                  imageRendering: "pixelated",
                 }}
+                onFocus={(e) =>
+                  (e.currentTarget.style.borderColor = "rgba(46,176,96,0.5)")
+                }
+                onBlur={(e) =>
+                  (e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)")
+                }
                 autoComplete="off"
                 spellCheck={false}
               />
-            </label>
+            </FieldLabel>
 
-            <label className="block">
-              <span className="font-pixel text-[7px] text-white/60 tracking-wider block mb-2">
-                EVM WALLET (FOR AIRDROP) <span style={{ color: "#FFD700" }}>*</span>
-              </span>
+            <FieldLabel
+              label={
+                <>
+                  EVM Wallet{" "}
+                  <span className="text-[#FFD700]/70">— for airdrop</span>
+                </>
+              }
+              hint={
+                walletAddress.length === 0
+                  ? "Base or Ethereum address (0x…)"
+                  : walletValid
+                  ? "✓ Valid address"
+                  : `${walletAddress.length}/42 characters`
+              }
+              hintColor={
+                walletAddress.length === 0
+                  ? undefined
+                  : walletValid
+                  ? "#7fc878"
+                  : "#ff7b7b"
+              }
+            >
               <input
                 type="text"
                 value={walletAddress}
                 onChange={(e) => setWalletAddress(e.target.value)}
                 placeholder="0x..."
-                className="w-full font-mono text-[11px] px-3 py-2 outline-none"
+                className="w-full font-mono text-[12px] px-3.5 py-2.5 outline-none transition-colors duration-200"
                 style={{
-                  background: "#000",
-                  border: `2px solid ${
+                  background: "rgba(0,0,0,0.4)",
+                  border: `1px solid ${
                     walletAddress.length === 0
-                      ? "#1E8F4E"
+                      ? "rgba(255,255,255,0.1)"
                       : walletValid
-                      ? "#FFD700"
-                      : "#FF3B3B"
+                      ? "rgba(255,215,0,0.5)"
+                      : "rgba(255,80,80,0.5)"
                   }`,
+                  borderRadius: "2px",
                   color: "#fff",
-                  imageRendering: "pixelated",
                 }}
                 autoComplete="off"
                 autoCapitalize="off"
                 spellCheck={false}
                 maxLength={42}
               />
-              <span className="font-pixel text-[6px] text-white/40 tracking-wider mt-1 block">
-                {walletAddress.length === 0
-                  ? "BASE / ETH ADDRESS — REQUIRED FOR AIRDROP"
-                  : walletValid
-                  ? "✓ VALID ADDRESS"
-                  : `${walletAddress.length}/42 — MUST START WITH 0x`}
-              </span>
-            </label>
+            </FieldLabel>
 
             {error && (
-              <div className="font-pixel text-[8px] text-red-400 tracking-wider">
+              <div
+                className="font-pixel text-[8px] text-[#ff7b7b] tracking-[0.15em] px-3 py-2"
+                style={{
+                  background: "rgba(255,80,80,0.08)",
+                  borderLeft: "2px solid #ff7b7b",
+                }}
+              >
                 {error}
               </div>
             )}
@@ -195,15 +237,15 @@ export default function ShareClaim({ card, shareUrl, onClaimed }: Props) {
             <button
               type="submit"
               disabled={phase === "claiming" || cooldown !== null || !walletValid}
-              className="w-full pixel-btn-outline text-[9px] py-3 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="w-full pixel-btn text-[10px] py-3.5 tracking-[0.4em] disabled:opacity-30 disabled:cursor-not-allowed transition-opacity duration-300"
             >
               {phase === "claiming"
                 ? "CLAIMING…"
                 : cooldown != null
-                ? `WAIT ${cooldown}S…`
+                ? `WAIT ${cooldown}S`
                 : !walletValid
                 ? "ENTER WALLET TO CLAIM"
-                : "I POSTED IT — CLAIM"}
+                : "CLAIM EARLY ACCESS"}
             </button>
           </form>
         )}
@@ -237,4 +279,51 @@ function buildText(
 
 function isTweetUrl(url: string): boolean {
   return /^https?:\/\/(?:www\.)?(?:twitter|x)\.com\/[^/]+\/status\/\d+/.test(url);
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Form helpers
+// ─────────────────────────────────────────────────────────────────────
+
+function FieldLabel({
+  label,
+  hint,
+  hintColor,
+  children,
+}: {
+  label: React.ReactNode;
+  hint?: React.ReactNode;
+  hintColor?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="block">
+      <span className="font-pixel text-[7px] text-white/45 tracking-[0.3em] block mb-2">
+        {label}
+      </span>
+      {children}
+      {hint && (
+        <span
+          className="font-pixel text-[6px] tracking-[0.2em] mt-1.5 block transition-colors duration-200"
+          style={{ color: hintColor ?? "rgba(255,255,255,0.3)" }}
+        >
+          {hint}
+        </span>
+      )}
+    </label>
+  );
+}
+
+function XGlyph() {
+  return (
+    <svg
+      width="11"
+      height="11"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      aria-hidden
+    >
+      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+    </svg>
+  );
 }

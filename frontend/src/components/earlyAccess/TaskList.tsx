@@ -91,13 +91,13 @@ export default function TaskList({
   const remaining = TASKS.filter((t) => !tasks[t.key]).length;
 
   return (
-    <div className="max-w-md mx-auto w-full animate-[fade-up_0.4s_ease-out]">
-      <div className="text-center mb-6">
-        <div className="font-pixel text-[8px] text-white/40 tracking-[0.2em] mb-1">
-          PLAYING AS
+    <div className="max-w-[440px] mx-auto w-full animate-[fade-up_500ms_cubic-bezier(0.16,1,0.3,1)_both]">
+      <div className="text-center mb-8">
+        <div className="font-pixel text-[7px] text-white/35 tracking-[0.45em] mb-2">
+          SIGNED IN AS
         </div>
         <div
-          className="font-pixel text-sm text-white tracking-[0.1em]"
+          className="font-pixel text-base text-white tracking-[0.1em]"
           style={{ textShadow: "2px 2px 0 #0B6623" }}
         >
           @{handle}
@@ -106,13 +106,14 @@ export default function TaskList({
 
       <RarityMeter score={score} rarity={rarity} maxScore={maxScore} />
 
-      <div className="mt-6 space-y-3">
-        {TASKS.map((t) => (
+      <div className="mt-8 space-y-2.5">
+        {TASKS.map((t, i) => (
           <TaskRow
             key={t.key}
             def={t}
             done={tasks[t.key]}
             onDone={() => onTaskComplete(t.key)}
+            index={i}
           />
         ))}
       </div>
@@ -120,11 +121,11 @@ export default function TaskList({
       <button
         onClick={onReveal}
         disabled={!tasksDone}
-        className="w-full mt-8 pixel-btn text-[10px] py-4 tracking-[0.3em] disabled:opacity-40 disabled:cursor-not-allowed"
+        className="w-full mt-10 pixel-btn text-[10px] py-4 tracking-[0.4em] disabled:opacity-30 disabled:cursor-not-allowed transition-opacity duration-300"
       >
         {tasksDone
-          ? "REVEAL MY CARD ↗"
-          : `COMPLETE ${remaining} MORE TO REVEAL`}
+          ? "REVEAL MY CARD"
+          : `${remaining} TASK${remaining === 1 ? "" : "S"} REMAINING`}
       </button>
 
       <style jsx>{`
@@ -145,10 +146,12 @@ function TaskRow({
   def,
   done,
   onDone,
+  index,
 }: {
   def: TaskDef;
   done: boolean;
   onDone: () => void;
+  index: number;
 }) {
   const [launched, setLaunched] = useState(false);
   const [counting, setCounting] = useState<number | null>(null);
@@ -172,47 +175,46 @@ function TaskRow({
     setCounting(4);
   }
 
+  const accent = done ? "#2eb060" : def.accent;
+
   return (
     <button
       onClick={start}
       disabled={done}
-      className={`group relative w-full text-left transition-transform ${
-        done ? "opacity-80" : "hover:-translate-y-0.5"
-      }`}
+      className="group relative w-full text-left transition-all duration-300"
       style={{
-        padding: "14px 16px",
+        padding: "16px 18px",
         background: done
-          ? "linear-gradient(180deg, rgba(46,176,96,0.15) 0%, rgba(11,102,35,0.15) 100%)"
-          : "#0a1a0a",
-        border: `2px solid ${done ? "#2eb060" : def.accent + "80"}`,
-        boxShadow: done
-          ? `inset -2px -2px 0 rgba(11,102,35,0.4), inset 2px 2px 0 rgba(46,176,96,0.3), 3px 3px 0 rgba(0,0,0,0.45)`
-          : `inset -2px -2px 0 rgba(0,0,0,0.5), inset 2px 2px 0 rgba(255,255,255,0.04), 3px 3px 0 rgba(0,0,0,0.4)`,
-        imageRendering: "pixelated",
+          ? "rgba(46,176,96,0.08)"
+          : "rgba(10,20,10,0.6)",
+        border: `1px solid ${done ? "rgba(46,176,96,0.5)" : "rgba(255,255,255,0.06)"}`,
+        borderLeftWidth: "3px",
+        borderLeftColor: accent,
+        cursor: done ? "default" : "pointer",
+        animationDelay: `${index * 60}ms`,
+      }}
+      onMouseEnter={(e) => {
+        if (!done) {
+          e.currentTarget.style.background = "rgba(15,30,15,0.8)";
+          e.currentTarget.style.transform = "translateX(2px)";
+        }
+      }}
+      onMouseLeave={(e) => {
+        if (!done) {
+          e.currentTarget.style.background = "rgba(10,20,10,0.6)";
+          e.currentTarget.style.transform = "translateX(0)";
+        }
       }}
     >
-      {def.badge && !done && (
-        <span
-          className="absolute -top-2 -right-2 font-pixel text-[6px] tracking-[0.15em] px-1.5 py-0.5"
-          style={{
-            background: def.accent,
-            color: "#000",
-            boxShadow: `2px 2px 0 rgba(0,0,0,0.5)`,
-          }}
-        >
-          {def.badge}
-        </span>
-      )}
-
-      <div className="flex items-center gap-3">
-        {/* Status dot / checkmark */}
+      <div className="flex items-center gap-4">
+        {/* Status indicator */}
         <div
-          className="shrink-0 w-7 h-7 flex items-center justify-center font-pixel text-[10px]"
+          className="shrink-0 w-8 h-8 flex items-center justify-center font-pixel text-[11px] transition-all duration-300"
           style={{
-            background: done ? "#2eb060" : "rgba(0,0,0,0.5)",
-            border: `2px solid ${done ? "#FFD700" : def.accent}`,
-            color: done ? "#000" : def.accent,
-            imageRendering: "pixelated",
+            background: done ? "#2eb060" : "transparent",
+            border: `1.5px solid ${accent}`,
+            color: done ? "#000" : accent,
+            borderRadius: "1px",
           }}
         >
           {done ? "✓" : counting != null ? counting : "→"}
@@ -220,12 +222,12 @@ function TaskRow({
 
         <div className="flex-1 min-w-0">
           <div
-            className="font-pixel text-[10px] tracking-wider truncate"
-            style={{ color: done ? "#2eb060" : "#fff" }}
+            className="font-pixel text-[10px] tracking-[0.1em] mb-1 truncate"
+            style={{ color: done ? "#7fc878" : "#fff" }}
           >
             {def.title}
           </div>
-          <div className="text-[11px] text-white/50 mt-0.5 truncate">
+          <div className="text-[11px] text-white/45 truncate leading-relaxed">
             {done
               ? "Completed"
               : counting != null
@@ -237,8 +239,8 @@ function TaskRow({
         <div
           className="shrink-0 font-pixel text-[10px] tracking-wider"
           style={{
-            color: done ? "#FFD700" : def.accent,
-            textShadow: "1px 1px 0 rgba(0,0,0,0.5)",
+            color: done ? "#7fc878" : accent,
+            opacity: done ? 0.6 : 1,
           }}
         >
           +{def.points}
@@ -272,54 +274,74 @@ function RarityMeter({
   const color = RARITY_COLORS[rarity];
 
   return (
-    <div
-      className="p-4"
-      style={{
-        background: "rgba(0,0,0,0.4)",
-        border: `2px solid ${color}60`,
-        boxShadow: "inset -2px -2px 0 rgba(0,0,0,0.5), inset 2px 2px 0 rgba(255,255,255,0.04)",
-      }}
-    >
-      <div className="flex items-center justify-between mb-2">
-        <span className="font-pixel text-[7px] text-white/60 tracking-[0.2em]">
-          PREDICTED RARITY
+    <div className="space-y-3">
+      <div className="flex items-baseline justify-between">
+        <span className="font-pixel text-[7px] text-white/40 tracking-[0.4em]">
+          PREDICTED TIER
         </span>
         <span
-          className="font-pixel text-[9px] tracking-[0.2em] transition-colors"
-          style={{ color, textShadow: `0 0 8px ${color}80` }}
+          className="font-pixel text-[12px] tracking-[0.3em] transition-colors duration-500"
+          style={{ color, textShadow: `0 0 16px ${color}80` }}
         >
           {rarity}
         </span>
       </div>
-      <div
-        className="relative h-3 overflow-hidden"
-        style={{ background: "#000", border: "1px solid #333" }}
-      >
-        {/* Tier markers at 30 / 60 / 90 */}
-        {[30, 60, 90].map((m) => (
+
+      <div className="relative">
+        {/* Track */}
+        <div
+          className="h-[6px] overflow-hidden"
+          style={{
+            background: "rgba(255,255,255,0.05)",
+            borderRadius: "1px",
+          }}
+        >
           <div
-            key={m}
-            className="absolute top-0 bottom-0 w-px opacity-60"
+            className="h-full transition-all duration-700"
             style={{
-              left: `${(m / maxScore) * 100}%`,
-              background: "rgba(255,255,255,0.25)",
+              width: `${pct}%`,
+              background: `linear-gradient(90deg, ${color}80 0%, ${color} 100%)`,
+              boxShadow: `0 0 10px ${color}80`,
+              transitionTimingFunction: "cubic-bezier(0.16, 1, 0.3, 1)",
             }}
           />
-        ))}
-        <div
-          className="h-full transition-all duration-500"
-          style={{
-            width: `${pct}%`,
-            background: `linear-gradient(90deg, ${color}aa 0%, ${color} 100%)`,
-            boxShadow: `0 0 12px ${color}80`,
-          }}
-        />
-      </div>
-      <div className="flex justify-between mt-1 font-pixel text-[6px] tracking-wider text-white/30">
-        <span>COMMON</span>
-        <span>RARE</span>
-        <span>EPIC</span>
-        <span style={{ color: "#FFD700" }}>LEGENDARY</span>
+        </div>
+        {/* Tier ticks above track */}
+        <div className="relative h-3">
+          {[
+            { label: "RARE", at: 30 },
+            { label: "EPIC", at: 60 },
+            { label: "LEGEND", at: 90 },
+          ].map((t) => {
+            const left = Math.min(100, (t.at / maxScore) * 100);
+            const reached = score >= t.at;
+            return (
+              <div
+                key={t.label}
+                className="absolute top-0 -translate-x-1/2 transition-opacity duration-500"
+                style={{
+                  left: `${left}%`,
+                  opacity: reached ? 1 : 0.35,
+                }}
+              >
+                <div
+                  className="w-px h-2 mx-auto"
+                  style={{
+                    background: reached ? color : "rgba(255,255,255,0.2)",
+                  }}
+                />
+                <div
+                  className="font-pixel text-[6px] tracking-[0.15em] mt-1 whitespace-nowrap"
+                  style={{
+                    color: reached ? color : "rgba(255,255,255,0.3)",
+                  }}
+                >
+                  {t.label}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

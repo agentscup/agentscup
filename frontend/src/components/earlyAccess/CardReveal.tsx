@@ -10,205 +10,230 @@ interface Props {
 }
 
 /**
- * FIFA-style pack reveal. Multi-stage build with rarity-coloured
- * effects that escalate over ~5 seconds:
+ * Cinematic reveal sequence — single focal point at every step,
+ * long ease-outs, no two effects screaming for attention at once.
  *
- *   t=0      idle           sealed pack drops in, halo dim
- *   t=200    anticipation   pulse halo grows, gentle wobble starts
- *   t=1500   buildup        light beams burst out, wobble intensifies,
- *                           orbiting sparks accelerate
- *   t=3200   explosion      full-screen white flash + radial burst
- *   t=3500   revealing      sealed disappears, real card flips in
- *                           with rotateY + scale punch
- *   t=4800   revealed       beams fade, holo shimmer settles
- *
- * onComplete fires at t=5500 to keep the card on screen for a beat
- * before the share UI cross-fades in.
+ *   t=0      drop      pack glides in from above, halo dim
+ *   t=900    settle    pack at rest, halo at 35%, scan line begins
+ *                      its slow vertical sweep
+ *   t=2300   charge    halo rises to 60%, four light streaks pulse
+ *                      out from the seal in cardinal directions,
+ *                      gentle tremor begins
+ *   t=3700   focus     halo blooms to 90%, pack emits a tight bright
+ *                      ring just before the climax (like a camera
+ *                      shutter closing in)
+ *   t=4100   climax    single white flash, pack scales out, 16
+ *                      radial particles in rarity colour
+ *   t=4500   reveal    real card materialises with a calm 1.2s
+ *                      flip-in. No screaming banner, no chaos —
+ *                      the card is the hero
+ *   t=5800   onComplete
  */
 type Phase =
-  | "idle"
-  | "anticipation"
-  | "buildup"
-  | "explosion"
-  | "revealing"
-  | "revealed";
+  | "drop"
+  | "settle"
+  | "charge"
+  | "focus"
+  | "climax"
+  | "reveal"
+  | "settled";
 
 export default function CardReveal({ card, onComplete }: Props) {
-  const [phase, setPhase] = useState<Phase>("idle");
+  const [phase, setPhase] = useState<Phase>("drop");
 
   useEffect(() => {
     const timers: ReturnType<typeof setTimeout>[] = [];
-    timers.push(setTimeout(() => setPhase("anticipation"), 200));
-    timers.push(setTimeout(() => setPhase("buildup"), 1500));
-    timers.push(setTimeout(() => setPhase("explosion"), 3200));
-    timers.push(setTimeout(() => setPhase("revealing"), 3500));
-    timers.push(setTimeout(() => setPhase("revealed"), 4800));
-    timers.push(setTimeout(() => onComplete?.(), 5500));
+    timers.push(setTimeout(() => setPhase("settle"), 900));
+    timers.push(setTimeout(() => setPhase("charge"), 2300));
+    timers.push(setTimeout(() => setPhase("focus"), 3700));
+    timers.push(setTimeout(() => setPhase("climax"), 4100));
+    timers.push(setTimeout(() => setPhase("reveal"), 4500));
+    timers.push(setTimeout(() => setPhase("settled"), 5700));
+    timers.push(setTimeout(() => onComplete?.(), 5800));
     return () => timers.forEach(clearTimeout);
   }, [onComplete]);
 
   const theme = THEMES[card.rarity];
-  const buildup = phase === "buildup";
-  const exploding = phase === "explosion";
-  const revealing = phase === "revealing";
-  const revealed = phase === "revealed";
-  const anticipating = phase === "anticipation" || buildup;
+  const showPack = phase === "drop" || phase === "settle" || phase === "charge" || phase === "focus";
+  const showCard = phase === "reveal" || phase === "settled";
+  const climaxing = phase === "climax";
+
+  // Halo intensity bumps with each phase — single value drives the
+  // whole atmospheric feel.
+  const haloOpacity = {
+    drop: 0.15,
+    settle: 0.35,
+    charge: 0.6,
+    focus: 0.9,
+    climax: 1,
+    reveal: 0.55,
+    settled: 0.45,
+  }[phase];
 
   return (
-    <div className="relative flex items-center justify-center min-h-[600px] w-full overflow-hidden">
-      {/* ── Halo (grows with each phase) ───────────────────────── */}
+    <div className="relative flex items-center justify-center min-h-[620px] w-full overflow-hidden">
+      {/* Atmospheric halo — single layer, opacity-driven */}
       <div
         aria-hidden
-        className="absolute inset-0 pointer-events-none transition-opacity duration-700"
+        className="absolute inset-0 pointer-events-none"
         style={{
-          background: `radial-gradient(circle at center, ${theme.glow} 0%, transparent 65%)`,
-          opacity: revealed ? 0.6 : buildup ? 0.85 : anticipating ? 0.55 : 0.25,
-          transform: buildup ? "scale(1.3)" : anticipating ? "scale(1.1)" : "scale(1)",
-          transition: "opacity 700ms ease-out, transform 1500ms ease-out",
+          background: `radial-gradient(ellipse at center, ${theme.glow} 0%, transparent 60%)`,
+          opacity: haloOpacity,
+          transform: phase === "focus" ? "scale(1.4)" : "scale(1)",
+          transition:
+            "opacity 800ms cubic-bezier(0.16, 1, 0.3, 1), transform 600ms cubic-bezier(0.16, 1, 0.3, 1)",
         }}
       />
 
-      {/* ── Rotating light beams (kick in at buildup) ──────────── */}
-      {(buildup || exploding) && (
+      {/* Vertical scan line during settle/charge — single subtle motif */}
+      {(phase === "settle" || phase === "charge") && (
         <div
           aria-hidden
-          className="absolute inset-0 pointer-events-none flex items-center justify-center"
-          style={{ animation: "beam-spin 4s linear infinite" }}
-        >
-          {Array.from({ length: 8 }).map((_, i) => (
+          className="absolute inset-x-0 pointer-events-none mix-blend-screen"
+          style={{
+            height: "120px",
+            background: `linear-gradient(180deg, transparent 0%, ${theme.beam}80 50%, transparent 100%)`,
+            opacity: 0.4,
+            animation: "scan-line 2.4s cubic-bezier(0.4, 0, 0.6, 1) infinite",
+          }}
+        />
+      )}
+
+      {/* Charge streaks — 4 cardinal beams during charge phase */}
+      {phase === "charge" && (
+        <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+          {[0, 90, 180, 270].map((deg) => (
             <div
-              key={i}
+              key={deg}
               className="absolute"
               style={{
-                width: "200%",
-                height: "10px",
-                background: `linear-gradient(90deg, transparent 0%, ${theme.beam} 45%, ${theme.beam} 55%, transparent 100%)`,
-                transform: `rotate(${i * 45}deg)`,
-                opacity: exploding ? 0.9 : 0.5,
-                filter: `blur(${exploding ? 1 : 4}px)`,
-                animation: `beam-pulse 1.5s ease-in-out infinite ${i * 0.1}s`,
+                width: "260px",
+                height: "2px",
+                background: `linear-gradient(90deg, transparent 0%, ${theme.beam} 50%, transparent 100%)`,
+                transform: `rotate(${deg}deg)`,
+                animation: "streak-pulse 1.4s cubic-bezier(0.4, 0, 0.2, 1) infinite",
+                animationDelay: `${(deg / 90) * 0.18}s`,
               }}
             />
           ))}
         </div>
       )}
 
-      {/* ── Orbiting sparks (anticipation onward) ──────────────── */}
-      {(anticipating || exploding || revealing) && (
-        <OrbitSparks intensity={buildup ? 1.4 : exploding ? 2 : 1} color={theme.beam} />
-      )}
-
-      {/* ── White flash burst ──────────────────────────────────── */}
-      {exploding && (
+      {/* Tight focus ring just before climax */}
+      {phase === "focus" && (
         <div
           aria-hidden
-          className="absolute inset-0 pointer-events-none"
+          className="absolute pointer-events-none"
           style={{
-            background:
-              "radial-gradient(circle at center, rgba(255,255,255,1) 0%, rgba(255,255,255,0.7) 25%, transparent 60%)",
-            animation: "flash-burst 300ms ease-out forwards",
+            width: "440px",
+            height: "440px",
+            border: `2px solid ${theme.beam}`,
+            borderRadius: "50%",
+            opacity: 0.75,
+            boxShadow: `inset 0 0 60px ${theme.beam}80, 0 0 80px ${theme.beam}80`,
+            animation: "focus-ring 380ms cubic-bezier(0.16, 1, 0.3, 1) forwards",
           }}
         />
       )}
 
-      {/* ── Outward particle confetti (at explosion) ───────────── */}
-      {exploding && <ExplosionConfetti color={theme.beam} />}
+      {/* Climax flash + particles */}
+      {climaxing && (
+        <>
+          <div
+            aria-hidden
+            className="absolute inset-0 pointer-events-none"
+            style={{
+              background:
+                "radial-gradient(circle at center, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.4) 25%, transparent 55%)",
+              animation: "flash 380ms cubic-bezier(0.16, 1, 0.3, 1) forwards",
+            }}
+          />
+          <ParticleBurst color={theme.beam} />
+        </>
+      )}
 
-      {/* ── Sealed pack ────────────────────────────────────────── */}
-      {!revealing && !revealed && (
+      {/* Sealed pack */}
+      {showPack && (
         <div
           className="relative"
           style={{
-            animation: buildup
-              ? "pack-shake-violent 0.18s steps(2) infinite"
-              : anticipating
-              ? "pack-shake-soft 0.4s ease-in-out infinite"
-              : "pack-drop 0.6s cubic-bezier(0.22,1,0.36,1) both",
-            opacity: exploding ? 0 : 1,
-            transition: "opacity 300ms ease-out",
+            animation:
+              phase === "drop"
+                ? "pack-drop 900ms cubic-bezier(0.16, 1, 0.3, 1) both"
+                : phase === "charge"
+                ? "pack-tremor 0.4s ease-in-out infinite"
+                : phase === "focus"
+                ? "pack-shrink 380ms cubic-bezier(0.7, 0, 0.84, 0) forwards"
+                : "pack-idle 3s ease-in-out infinite",
+            opacity: phase === "focus" ? 0 : 1,
+            transition: "opacity 380ms ease-in",
           }}
         >
-          <SealedPack theme={theme} intensity={buildup ? 1.5 : anticipating ? 1.1 : 0.9} />
+          <SealedPack theme={theme} intensity={phase === "charge" ? 1.3 : 1} />
         </div>
       )}
 
-      {/* ── Real card flip-in ──────────────────────────────────── */}
-      {(revealing || revealed) && (
+      {/* Real card flip-in */}
+      {showCard && (
         <div
-          className="relative"
           style={{
-            animation: revealing
-              ? "card-flip-in 1.3s cubic-bezier(0.22,1,0.36,1) both"
+            animation: phase === "reveal"
+              ? "card-flip 1.2s cubic-bezier(0.16, 1, 0.3, 1) both"
               : undefined,
-            filter: revealing ? "drop-shadow(0 0 40px " + theme.beam + ")" : undefined,
+            filter:
+              phase === "reveal"
+                ? `drop-shadow(0 0 32px ${theme.beam}80)`
+                : `drop-shadow(0 0 16px ${theme.beam}40)`,
+            transition: "filter 600ms ease-out",
           }}
         >
           <FounderCard card={card} />
         </div>
       )}
 
-      {/* Rarity announcement banner — slides in just before reveal */}
-      {revealing && (
-        <div
-          aria-hidden
-          className="absolute top-8 inset-x-0 flex justify-center pointer-events-none"
-          style={{
-            animation: "rarity-banner 1.3s cubic-bezier(0.22,1,0.36,1) both",
-          }}
-        >
-          <div
-            className="font-pixel text-xl sm:text-3xl tracking-[0.4em]"
-            style={{
-              color: theme.beam,
-              textShadow: `0 0 24px ${theme.beam}, 0 0 8px #fff, 4px 4px 0 rgba(0,0,0,0.8)`,
-            }}
-          >
-            {card.rarity}!
-          </div>
-        </div>
-      )}
-
       <style jsx>{`
-        @keyframes beam-spin {
-          from { transform: rotate(0deg); }
-          to   { transform: rotate(360deg); }
-        }
-        @keyframes beam-pulse {
-          0%, 100% { opacity: 0.4; }
-          50%      { opacity: 1; }
-        }
-        @keyframes flash-burst {
-          0%   { opacity: 0; transform: scale(0.4); }
-          30%  { opacity: 1; transform: scale(1.5); }
-          100% { opacity: 0; transform: scale(2.4); }
-        }
         @keyframes pack-drop {
-          0%   { transform: translateY(-80px) scale(0.6); opacity: 0; }
+          0%   { transform: translateY(-60px) scale(0.85); opacity: 0; }
           100% { transform: translateY(0) scale(1); opacity: 1; }
         }
-        @keyframes pack-shake-soft {
-          0%, 100% { transform: translate(0, 0) rotate(0deg); }
-          25%      { transform: translate(-2px, 1px) rotate(-1deg); }
-          75%      { transform: translate(2px, -1px) rotate(1deg); }
+        @keyframes pack-idle {
+          0%, 100% { transform: translateY(0); }
+          50%      { transform: translateY(-3px); }
         }
-        @keyframes pack-shake-violent {
-          0%   { transform: translate(-3px, 2px) rotate(-2deg); }
-          25%  { transform: translate(4px, -3px) rotate(2deg); }
-          50%  { transform: translate(-4px, -1px) rotate(-3deg); }
-          75%  { transform: translate(3px, 3px) rotate(2deg); }
-          100% { transform: translate(-2px, -2px) rotate(-1deg); }
+        @keyframes pack-tremor {
+          0%, 100% { transform: translate(0, 0); }
+          25%      { transform: translate(-1px, 1px); }
+          50%      { transform: translate(1px, -1px); }
+          75%      { transform: translate(1px, 1px); }
         }
-        @keyframes card-flip-in {
-          0%   { transform: scale(0.2) rotateY(180deg) rotateZ(-12deg); opacity: 0; filter: brightness(3); }
-          35%  { transform: scale(1.25) rotateY(-15deg) rotateZ(2deg); opacity: 1; filter: brightness(1.6); }
-          65%  { transform: scale(0.96) rotateY(8deg) rotateZ(-1deg); filter: brightness(1.2); }
-          100% { transform: scale(1) rotateY(0) rotateZ(0); filter: brightness(1); }
+        @keyframes pack-shrink {
+          0%   { transform: scale(1); opacity: 1; }
+          100% { transform: scale(0.6); opacity: 0; }
         }
-        @keyframes rarity-banner {
-          0%   { transform: translateY(-30px) scale(0.6); opacity: 0; }
-          40%  { transform: translateY(0) scale(1.15); opacity: 1; }
-          70%  { transform: translateY(0) scale(1); opacity: 1; }
-          100% { transform: translateY(0) scale(1); opacity: 0.85; }
+        @keyframes scan-line {
+          0%   { transform: translateY(-200px); opacity: 0; }
+          15%  { opacity: 0.45; }
+          85%  { opacity: 0.45; }
+          100% { transform: translateY(420px); opacity: 0; }
+        }
+        @keyframes streak-pulse {
+          0%, 100% { opacity: 0; transform-origin: center; }
+          40%      { opacity: 0.9; }
+          50%      { opacity: 1; }
+        }
+        @keyframes focus-ring {
+          0%   { transform: scale(1.4); opacity: 0; }
+          100% { transform: scale(1); opacity: 0.75; }
+        }
+        @keyframes flash {
+          0%   { opacity: 0; transform: scale(0.6); }
+          35%  { opacity: 1; transform: scale(1.4); }
+          100% { opacity: 0; transform: scale(2); }
+        }
+        @keyframes card-flip {
+          0%   { transform: scale(0.4) rotateY(120deg); opacity: 0; filter: brightness(2); }
+          50%  { transform: scale(1.04) rotateY(-6deg); opacity: 1; filter: brightness(1.3); }
+          100% { transform: scale(1) rotateY(0); opacity: 1; filter: brightness(1); }
         }
       `}</style>
     </div>
@@ -216,7 +241,7 @@ export default function CardReveal({ card, onComplete }: Props) {
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// Sealed pack silhouette — gold-rimmed envelope with pulsing seal
+// Sealed pack — refined wordmark instead of generic "?"
 // ─────────────────────────────────────────────────────────────────────
 
 function SealedPack({
@@ -231,135 +256,111 @@ function SealedPack({
       className="w-[280px] sm:w-[320px] h-[430px] sm:h-[490px] relative overflow-hidden"
       style={{
         background:
-          "linear-gradient(135deg, #0a1e0a 0%, #0a2a12 50%, #0a1e0a 100%)",
-        border: `4px solid ${theme.border}`,
+          "linear-gradient(160deg, #0c1e0c 0%, #0a1a0a 50%, #060f06 100%)",
+        border: `3px solid ${theme.border}`,
         boxShadow: `
-          inset -4px -4px 0 ${theme.borderDark},
-          inset 4px 4px 0 ${theme.borderLight},
-          0 0 ${20 * intensity}px ${theme.glow},
-          8px 8px 0 rgba(0,0,0,0.6)
+          inset -3px -3px 0 ${theme.borderDark},
+          inset 3px 3px 0 ${theme.borderLight}40,
+          0 0 ${22 * intensity}px ${theme.glow},
+          0 8px 0 rgba(0,0,0,0.5),
+          0 16px 32px rgba(0,0,0,0.6)
         `,
         imageRendering: "pixelated",
       }}
     >
-      {/* Diagonal scanlines */}
+      {/* Subtle grain */}
       <div
         aria-hidden
-        className="absolute inset-0 opacity-25"
+        className="absolute inset-0 opacity-[0.06]"
         style={{
-          background:
-            "repeating-linear-gradient(45deg, transparent 0 8px, rgba(46,176,96,0.25) 8px 10px)",
+          backgroundImage:
+            "radial-gradient(circle at 1px 1px, rgba(255,255,255,0.4) 1px, transparent 0)",
+          backgroundSize: "4px 4px",
         }}
       />
 
-      {/* Scanlight sweep — moves vertically inside the pack */}
-      <div
-        aria-hidden
-        className="absolute inset-x-0 h-1/3 pointer-events-none mix-blend-screen"
-        style={{
-          background: `linear-gradient(180deg, transparent 0%, ${theme.beam} 50%, transparent 100%)`,
-          opacity: 0.4 * intensity,
-          animation: "scan-sweep 1.6s ease-in-out infinite",
-        }}
-      />
-
-      {/* Top + bottom labels */}
-      <div className="absolute top-4 inset-x-0 text-center font-pixel text-[7px] tracking-[0.4em] text-white/50">
-        AGENTS CUP
+      {/* Top + bottom marks */}
+      <div className="absolute top-5 inset-x-0 text-center font-pixel text-[6px] tracking-[0.5em] text-white/40">
+        AGENTS · CUP
       </div>
-      <div className="absolute bottom-4 inset-x-0 text-center font-pixel text-[7px] tracking-[0.4em] text-white/40">
+      <div className="absolute bottom-5 inset-x-0 text-center font-pixel text-[6px] tracking-[0.5em] text-white/30">
         FOUNDER PACK
       </div>
 
-      {/* Centerpiece — pulsing seal */}
+      {/* Center wordmark — clean monogram, no glyph */}
       <div className="absolute inset-0 flex items-center justify-center">
-        <div className="relative">
-          {/* Outer ring */}
+        <div className="relative flex items-center justify-center">
+          {/* Soft outer ring (no spinning) */}
           <div
-            className="w-32 h-32 rounded-full"
+            className="absolute w-40 h-40 rounded-full"
             style={{
-              border: `4px solid ${theme.beam}`,
-              boxShadow: `0 0 ${24 * intensity}px ${theme.beam}, inset 0 0 ${16 * intensity}px ${theme.beam}`,
-              animation: "seal-pulse 1.4s ease-in-out infinite",
+              border: `1px solid ${theme.border}30`,
+              boxShadow: `0 0 ${30 * intensity}px ${theme.glow}`,
             }}
           />
-          {/* Glyph */}
+          {/* Inner ring */}
           <div
-            className="absolute inset-0 flex items-center justify-center font-pixel text-[44px]"
+            className="absolute w-28 h-28 rounded-full"
             style={{
-              color: "#FFD700",
-              textShadow: `2px 2px 0 #0B6623, 4px 4px 0 rgba(0,0,0,0.6), 0 0 ${16 * intensity}px #FFD700`,
+              border: `2px solid ${theme.beam}50`,
+              boxShadow: `inset 0 0 ${18 * intensity}px ${theme.glow}`,
+            }}
+          />
+          {/* Monogram */}
+          <div
+            className="font-pixel text-[40px] tracking-[0.05em]"
+            style={{
+              color: theme.borderLight,
+              textShadow: `2px 2px 0 ${theme.borderDark}, 0 0 ${20 * intensity}px ${theme.beam}`,
             }}
           >
-            ?
+            AC
           </div>
         </div>
       </div>
 
-      <style jsx>{`
-        @keyframes scan-sweep {
-          0%   { transform: translateY(-100%); }
-          100% { transform: translateY(400%); }
-        }
-        @keyframes seal-pulse {
-          0%, 100% { transform: scale(1); }
-          50%      { transform: scale(1.08); }
-        }
-      `}</style>
+      {/* Corner ornaments */}
+      <Corner pos="tl" color={theme.beam} />
+      <Corner pos="tr" color={theme.beam} />
+      <Corner pos="bl" color={theme.beam} />
+      <Corner pos="br" color={theme.beam} />
     </div>
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────
-// Orbiting sparks
-// ─────────────────────────────────────────────────────────────────────
-
-function OrbitSparks({ intensity, color }: { intensity: number; color: string }) {
-  const count = Math.round(14 * intensity);
+function Corner({ pos, color }: { pos: "tl" | "tr" | "bl" | "br"; color: string }) {
+  const map = {
+    tl: { top: 12, left: 12 },
+    tr: { top: 12, right: 12 },
+    bl: { bottom: 12, left: 12 },
+    br: { bottom: 12, right: 12 },
+  } as const;
   return (
-    <div className="absolute inset-0 overflow-hidden pointer-events-none">
-      {Array.from({ length: count }).map((_, i) => {
-        const radius = 160 + ((i * 23) % 80);
-        const startAngle = (i * 360) / count;
-        const dur = 2.5 + ((i * 0.3) % 2);
-        return (
-          <div
-            key={i}
-            className="absolute left-1/2 top-1/2"
-            style={{
-              width: 4,
-              height: 4,
-              background: i % 3 === 0 ? "#fff" : color,
-              imageRendering: "pixelated",
-              boxShadow: `0 0 8px ${color}`,
-              animation: `orbit-${i} ${dur}s linear infinite`,
-              transformOrigin: "center",
-            }}
-          >
-            <style jsx>{`
-              @keyframes orbit-${i} {
-                from { transform: translate(-50%, -50%) rotate(${startAngle}deg) translateX(${radius}px) rotate(-${startAngle}deg); }
-                to   { transform: translate(-50%, -50%) rotate(${startAngle + 360}deg) translateX(${radius}px) rotate(-${startAngle + 360}deg); }
-              }
-            `}</style>
-          </div>
-        );
-      })}
-    </div>
+    <div
+      aria-hidden
+      className="absolute w-3 h-3"
+      style={{
+        ...map[pos],
+        background: color,
+        opacity: 0.4,
+        boxShadow: `0 0 6px ${color}`,
+        imageRendering: "pixelated",
+      }}
+    />
   );
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// Explosion confetti — radial spray outward
+// Particle burst — radial spray at climax (16 pieces, smooth)
 // ─────────────────────────────────────────────────────────────────────
 
-function ExplosionConfetti({ color }: { color: string }) {
+function ParticleBurst({ color }: { color: string }) {
   return (
     <div className="absolute inset-0 overflow-hidden pointer-events-none flex items-center justify-center">
-      {Array.from({ length: 36 }).map((_, i) => {
-        const angle = (i * 360) / 36;
-        const distance = 280 + ((i * 17) % 180);
-        const size = 6 + ((i * 3) % 6);
+      {Array.from({ length: 16 }).map((_, i) => {
+        const angle = (i * 360) / 16;
+        const distance = 220 + ((i * 13) % 80);
+        const size = 5 + ((i * 3) % 4);
         return (
           <div
             key={i}
@@ -367,16 +368,15 @@ function ExplosionConfetti({ color }: { color: string }) {
             style={{
               width: size,
               height: size,
-              background: i % 4 === 0 ? "#fff" : i % 3 === 0 ? "#FFD700" : color,
+              background: i % 3 === 0 ? "#fff" : color,
               imageRendering: "pixelated",
-              boxShadow: `0 0 6px ${color}`,
-              animation: `explode-${i} 900ms cubic-bezier(0.2,0.7,0.4,1) forwards`,
-              animationDelay: `${(i % 6) * 12}ms`,
+              boxShadow: `0 0 8px ${color}`,
+              animation: `particle-${i} 700ms cubic-bezier(0.16, 1, 0.3, 1) forwards`,
             }}
           >
             <style jsx>{`
-              @keyframes explode-${i} {
-                0%   { transform: rotate(${angle}deg) translateX(0) scale(0.5); opacity: 1; }
+              @keyframes particle-${i} {
+                0%   { transform: rotate(${angle}deg) translateX(0) scale(0.6); opacity: 1; }
                 100% { transform: rotate(${angle}deg) translateX(${distance}px) scale(0); opacity: 0; }
               }
             `}</style>
@@ -388,7 +388,7 @@ function ExplosionConfetti({ color }: { color: string }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// Rarity palettes (must mirror FounderCard's colour intent)
+// Rarity palettes
 // ─────────────────────────────────────────────────────────────────────
 
 interface ThemePalette {
@@ -404,28 +404,28 @@ const THEMES: Record<Rarity, ThemePalette> = {
     border: "#6b8e6b",
     borderLight: "#a8c2a8",
     borderDark: "#3b5a3b",
-    glow: "rgba(106,142,107,0.55)",
+    glow: "rgba(106,142,107,0.45)",
     beam: "#a8c2a8",
   },
   RARE: {
     border: "#00aeef",
     borderLight: "#7fd9ff",
     borderDark: "#006080",
-    glow: "rgba(0,174,239,0.65)",
+    glow: "rgba(0,174,239,0.55)",
     beam: "#7fd9ff",
   },
   EPIC: {
     border: "#b068ff",
     borderLight: "#d9b0ff",
     borderDark: "#5a2a80",
-    glow: "rgba(176,104,255,0.7)",
+    glow: "rgba(176,104,255,0.6)",
     beam: "#d9b0ff",
   },
   LEGENDARY: {
     border: "#FFD700",
     borderLight: "#fff4b0",
     borderDark: "#8a6f00",
-    glow: "rgba(255,215,0,0.75)",
+    glow: "rgba(255,215,0,0.65)",
     beam: "#FFF4B0",
   },
 };

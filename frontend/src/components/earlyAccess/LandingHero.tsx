@@ -12,11 +12,9 @@ interface Props {
 }
 
 /**
- * First screen the user sees. One thing to do: press the big button.
- *
- * We deliberately do not explain rarity / tasks / share here — that's
- * what the next screen is for. The job of this screen is a strong
- * visual hook and a zero-friction start.
+ * Refined hero — single focal point, generous whitespace, no
+ * decorative noise around the CTA. Counter sits as a small dignified
+ * badge above the wordmark, not as a competing focal element.
  */
 export default function LandingHero({ onStart, signInWith }: Props) {
   const [claimed, setClaimed] = useState<number | null>(null);
@@ -31,54 +29,59 @@ export default function LandingHero({ onStart, signInWith }: Props) {
   }, []);
 
   return (
-    <div className="relative flex flex-col items-center text-center min-h-[520px] justify-center">
+    <div className="relative flex flex-col items-center text-center min-h-[560px] justify-center pt-8 pb-16 animate-[hero-fade_600ms_cubic-bezier(0.16,1,0.3,1)_both]">
       <CounterBadge count={claimed} />
 
-      <div className="flex justify-center mb-8 mt-6 floating-trophy">
-        <Image
-          src="/trophy.svg"
-          alt="Agents Cup"
-          width={112}
-          height={112}
-          className="drop-shadow-[0_0_40px_rgba(255,215,0,0.5)]"
-          priority
-        />
+      <div className="flex justify-center my-10">
+        <div className="floating-trophy">
+          <Image
+            src="/trophy.svg"
+            alt="Agents Cup"
+            width={120}
+            height={120}
+            className="drop-shadow-[0_0_56px_rgba(255,215,0,0.45)]"
+            priority
+            style={{ imageRendering: "pixelated" }}
+          />
+        </div>
       </div>
 
+      {/* Eyebrow */}
+      <div className="font-pixel text-[8px] sm:text-[10px] text-[#FFD700]/80 tracking-[0.5em] mb-5">
+        EARLY ACCESS
+      </div>
+
+      {/* Wordmark */}
       <h1
-        className="font-pixel text-2xl sm:text-5xl text-white mb-4 tracking-[0.1em]"
+        className="font-pixel text-[28px] sm:text-[56px] leading-none text-white mb-4 tracking-[0.05em]"
         style={{
           textShadow:
-            "3px 3px 0 #0B6623, 6px 6px 0 rgba(0,0,0,0.5), 0 0 40px rgba(30,143,78,0.3)",
+            "3px 3px 0 #0B6623, 6px 6px 0 rgba(0,0,0,0.55), 0 0 60px rgba(30,143,78,0.18)",
         }}
       >
-        FOUNDER CARD
+        FOUNDER&nbsp;CARD
       </h1>
 
-      <p className="font-pixel text-[10px] sm:text-xs text-[#FFD700] tracking-[0.35em] mb-4">
-        AGENTS CUP · EARLY ACCESS
-      </p>
-
-      <p className="text-[13px] sm:text-base text-white/70 max-w-md mx-auto leading-relaxed mb-10 px-4">
-        A one-of-one pixel-art card, minted from your X handle.
-        Complete simple tasks to roll a rarer pull.
+      {/* Subtitle */}
+      <p className="text-[13px] sm:text-base text-white/60 max-w-[440px] mx-auto leading-[1.65] mb-12 px-4 font-medium">
+        A one-of-one card minted from your X handle.<br />
+        <span className="text-white/40">Bigger followings pull rarer cards.</span>
       </p>
 
       {signInWith ?? (
         <button
           onClick={onStart}
-          className="group relative font-pixel text-[10px] sm:text-[12px] tracking-[0.3em] overflow-hidden"
+          className="group relative font-pixel text-[10px] sm:text-[12px] tracking-[0.4em] overflow-hidden"
           style={{
-            padding: "18px 48px",
+            padding: "20px 56px",
             background: "linear-gradient(180deg, #FFD700 0%, #B8960C 100%)",
             color: "#1a1200",
-            border: "4px solid #FFF4B0",
+            border: "3px solid #FFF4B0",
             boxShadow:
-              "inset -4px -4px 0 #8a6f00, inset 4px 4px 0 #FFF4B0, 0 6px 0 #5a4500, 8px 8px 0 rgba(0,0,0,0.6)",
+              "inset -3px -3px 0 #8a6f00, inset 3px 3px 0 #FFF4B0, 0 6px 0 #5a4500, 0 12px 24px rgba(0,0,0,0.4)",
             textShadow: "1px 1px 0 #FFF4B0",
             imageRendering: "pixelated",
-            transform: "translateY(0)",
-            transition: "transform 120ms ease-out",
+            transition: "transform 180ms cubic-bezier(0.16, 1, 0.3, 1)",
           }}
           onMouseDown={(e) => (e.currentTarget.style.transform = "translateY(4px)")}
           onMouseUp={(e) => (e.currentTarget.style.transform = "translateY(0)")}
@@ -86,33 +89,37 @@ export default function LandingHero({ onStart, signInWith }: Props) {
         >
           <span
             aria-hidden
-            className="absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity"
+            className="absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-300"
             style={{
               background:
-                "linear-gradient(135deg, transparent 40%, rgba(255,255,255,0.5) 50%, transparent 60%)",
-              backgroundSize: "200% 200%",
-              animation: "btn-shine 1.2s linear infinite",
+                "linear-gradient(120deg, transparent 35%, rgba(255,255,255,0.45) 50%, transparent 65%)",
+              backgroundSize: "250% 250%",
+              animation: "shine 1.6s linear infinite",
             }}
           />
-          <span className="relative">CONNECT WITH X ↗</span>
+          <span className="relative">CONNECT WITH X</span>
         </button>
       )}
 
-      <p className="mt-6 font-pixel text-[7px] text-white/30 tracking-[0.3em]">
-        FREE · ONE CARD PER X ACCOUNT · 60 SECONDS
+      <p className="mt-8 font-pixel text-[7px] text-white/30 tracking-[0.4em]">
+        FREE  ·  ONE PER ACCOUNT  ·  60 SECONDS
       </p>
 
       <style jsx>{`
-        @keyframes btn-shine {
-          0%   { background-position: 200% 200%; }
-          100% { background-position: -200% -200%; }
+        @keyframes hero-fade {
+          0%   { opacity: 0; transform: translateY(16px); }
+          100% { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes shine {
+          0%   { background-position: 250% 250%; }
+          100% { background-position: -250% -250%; }
         }
         .floating-trophy {
-          animation: float 3s ease-in-out infinite;
+          animation: float 4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
         }
         @keyframes float {
           0%, 100% { transform: translateY(0); }
-          50%      { transform: translateY(-8px); }
+          50%      { transform: translateY(-10px); }
         }
       `}</style>
     </div>
@@ -122,17 +129,17 @@ export default function LandingHero({ onStart, signInWith }: Props) {
 function CounterBadge({ count }: { count: number | null }) {
   return (
     <div
-      className="inline-flex items-center gap-2 px-3 py-1 font-pixel text-[8px] tracking-[0.3em]"
+      className="inline-flex items-center gap-2.5 px-3.5 py-1.5 font-pixel text-[7px] tracking-[0.35em]"
       style={{
-        background: "#0a1e0a",
-        color: "#2eb060",
-        border: "2px solid #1E8F4E",
-        boxShadow:
-          "inset -2px -2px 0 #0B6623, inset 2px 2px 0 #2eb060, 3px 3px 0 rgba(0,0,0,0.5)",
+        background: "rgba(10,30,10,0.7)",
+        backdropFilter: "blur(8px)",
+        color: "#7fc878",
+        border: "1px solid rgba(46,176,96,0.3)",
+        borderRadius: "2px",
       }}
     >
       <span className="w-1.5 h-1.5 bg-[#2eb060] animate-pulse" />
-      {count == null ? "LIVE NOW" : `${count.toLocaleString()} CLAIMED`}
+      {count == null ? "LIVE" : `${count.toLocaleString()} CLAIMED`}
     </div>
   );
 }
