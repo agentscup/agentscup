@@ -5,14 +5,17 @@ import { upgradeAvatarUrl } from "@/lib/earlyAccess/cardGen";
 /**
  * GET /api/early-access/leaderboard
  *
- * Returns the top N claimed cards sorted by X follower count,
- * descending. Used both on the landing (top-5 preview) and on the
- * claimed screen (top 20 + the caller's own rank).
+ * Returns the top N claimed cards sorted by rarity score descending.
+ * Since rarity tier is a pure function of the score (90+ LEGENDARY,
+ * 60+ EPIC, 30+ RARE, <30 COMMON), ordering by score alone naturally
+ * groups the board by tier with the highest rank inside each tier
+ * surfacing first. `overall` is the tiebreaker when two claims sit
+ * on the same score.
  *
  * Performance characteristics:
- *   * Query uses `early_access_claims_leaderboard_idx` — a partial
- *     index on follower_count for claimed rows, so the sort is a
- *     sub-millisecond index-range scan.
+ *   * Query uses `early_access_claims_score_idx` — a partial index
+ *     on score for claimed rows, so the sort is a sub-millisecond
+ *     index-range scan.
  *   * Response is CDN-cached for 60s via `s-maxage` — leaderboard
  *     freshness is non-critical and a 60s window eliminates DB
  *     pressure during launch-hour view bursts. Stale-while-
@@ -43,7 +46,7 @@ export async function GET(req: Request) {
         "x_handle, x_display_name, x_avatar_url, follower_count, rarity, overall, score, position"
       )
       .eq("claimed", true)
-      .order("follower_count", { ascending: false, nullsFirst: false })
+      .order("score", { ascending: false, nullsFirst: false })
       .order("overall", { ascending: false })
       .limit(limit),
     supabase
