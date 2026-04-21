@@ -33,6 +33,28 @@ const EMPTY_TASKS: TaskState = {
   replyPinned: false,
 };
 
+const LS_KEYS = {
+  handle: "agentscup.earlyAccess.handle",
+  tasks: (h: string) => `agentscup.earlyAccess.tasks.${h}`,
+} as const;
+
+function readLS(key: string): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+function writeLS(key: string, value: string) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    /* ignore quota / private-mode failures */
+  }
+}
+
 export default function EarlyAccessPage() {
   const { data: session, status } = useSession();
   const xSession = session as typeof session & {
@@ -47,11 +69,82 @@ export default function EarlyAccessPage() {
   const [realSignals, setRealSignals] = useState<Partial<XSignals> | null>(null);
   const [card, setCard] = useState<FounderCardT | null>(null);
   const [claimId, setClaimId] = useState<string | null>(null);
+  const [restoreChecked, setRestoreChecked] = useState(false);
+
+  // ── Page refresh restore ─────────────────────────────────────────
+  // Before we show anything, check if the user already has a reveal
+  // or claim on record (by OAuth session handle or a locally-cached
+  // mock handle). If so, skip them straight back to the right phase
+  // so refresh doesn't reset their progress.
+  useEffect(() => {
+    if (restoreChecked) return;
+    // Wait for Auth.js to settle before deciding which handle to use.
+    if (status === "loading") return;
+
+    const oauthHandle = xSession?.xHandle?.toLowerCase() ?? null;
+    const cachedHandle = readLS(LS_KEYS.handle);
+    const targetHandle = oauthHandle ?? cachedHandle;
+
+    if (!targetHandle) {
+      setRestoreChecked(true);
+      return;
+    }
+
+    const qs = oauthHandle ? "" : `?handle=${encodeURIComponent(targetHandle)}`;
+    fetch(`/api/early-access/status${qs}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then(
+        (
+          data:
+            | {
+                status: "none" | "revealed" | "claimed";
+                card?: FounderCardT;
+                claimId?: string;
+                tasks?: Record<string, boolean> | null;
+              }
+            | null
+        ) => {
+          if (data && data.status !== "none" && data.card) {
+            setHandle(data.card.handle);
+            setCard(data.card);
+            if (data.claimId) setClaimId(data.claimId);
+            if (data.tasks) {
+              setTasks({
+                followAgentsCup: !!data.tasks.followAgentsCup,
+                notificationsOn: !!data.tasks.notificationsOn,
+                replyPinned: !!data.tasks.replyPinned,
+              });
+            }
+            setPhase(data.status === "claimed" ? "claimed" : "revealed");
+          } else {
+            // No server-side progress — maybe they have unfinished
+            // task toggles in localStorage from an earlier session.
+            if (cachedHandle) {
+              setHandle(cachedHandle);
+              const savedTasks = readLS(LS_KEYS.tasks(cachedHandle));
+              if (savedTasks) {
+                try {
+                  const parsed = JSON.parse(savedTasks) as Partial<TaskState>;
+                  setTasks((t) => ({ ...t, ...parsed }));
+                } catch {
+                  /* ignore corrupt cache */
+                }
+              }
+              if (phase === "landing") setPhase("tasks");
+            }
+          }
+        }
+      )
+      .catch(() => undefined)
+      .finally(() => setRestoreChecked(true));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status, xSession?.xHandle, restoreChecked]);
 
   // ── Signed-in path (OAuth live) ─────────────────────────────────
-  // When Auth.js reports a valid X session, skip the handle step and
-  // hit /me for the real signals + follow check.
+  // Once restore finishes and the user is authenticated but hasn't
+  // started yet, fan out to /me for real follower signals.
   useEffect(() => {
+    if (!restoreChecked) return;
     if (status !== "authenticated" || !xSession?.xHandle) return;
     if (phase !== "landing" && phase !== "handle") return;
     setHandle(xSession.xHandle.toLowerCase());
@@ -61,8 +154,6 @@ export default function EarlyAccessPage() {
       .then((data: (Partial<XSignals> & { followsAgentsCup?: boolean }) | null) => {
         if (data) {
           setRealSignals(data);
-          // Pre-seed the @agentscup follow toggle when we already
-          // know the user follows us.
           setTasks((t) => ({
             ...t,
             followAgentsCup: !!data.followsAgentsCup,
@@ -71,7 +162,19 @@ export default function EarlyAccessPage() {
         setPhase("tasks");
       })
       .catch(() => setPhase("tasks"));
-  }, [status, xSession?.xHandle, phase]);
+  }, [status, xSession?.xHandle, phase, restoreChecked]);
+
+  // ── Persist tasks per handle so refresh keeps optimistic progress.
+  useEffect(() => {
+    if (!handle) return;
+    writeLS(LS_KEYS.tasks(handle), JSON.stringify(tasks));
+  }, [handle, tasks]);
+
+  // Persist the handle itself the first time it's set.
+  useEffect(() => {
+    if (!handle) return;
+    writeLS(LS_KEYS.handle, handle);
+  }, [handle]);
 
   /** Deterministic 0-15 handle jitter (same as server-side gen). */
   const handleJitter = useMemo(() => {
@@ -187,14 +290,25 @@ export default function EarlyAccessPage() {
       <Confetti active={phase === "claimed"} />
 
       <div className="relative z-10 max-w-3xl mx-auto px-4 sm:px-6 pt-10 pb-24">
-        {phase === "landing" && (
+        {/* Suspend every phase until the restore probe finishes, so a
+            returning user never sees the landing flash before being
+            sent back to their claimed / revealed state. */}
+        {!restoreChecked && (
+          <div className="flex items-center justify-center min-h-[540px]">
+            <div className="font-pixel text-[8px] text-white/30 tracking-[0.4em] animate-pulse">
+              LOADING
+            </div>
+          </div>
+        )}
+
+        {restoreChecked && phase === "landing" && (
           <LandingHero
             onStart={() => setPhase("handle")}
             signInWith={oauthAvailable ? <SignInWithX /> : null}
           />
         )}
 
-        {phase === "handle" && !oauthAvailable && (
+        {restoreChecked && phase === "handle" && !oauthAvailable && (
           <HandleStep
             onSubmit={(h) => {
               setHandle(h);
@@ -203,13 +317,13 @@ export default function EarlyAccessPage() {
           />
         )}
 
-        {phase === "loading" && (
+        {restoreChecked && phase === "loading" && (
           <div className="text-center font-pixel text-[10px] text-white/60 tracking-[0.3em] py-20">
             LOADING YOUR CARD…
           </div>
         )}
 
-        {phase === "tasks" && (
+        {restoreChecked && phase === "tasks" && (
           <TaskList
             handle={handle}
             tasks={tasks}
@@ -219,11 +333,11 @@ export default function EarlyAccessPage() {
           />
         )}
 
-        {phase === "revealing" && card && (
+        {restoreChecked && phase === "revealing" && card && (
           <CardReveal card={card} onComplete={() => setPhase("revealed")} />
         )}
 
-        {(phase === "revealed" || phase === "claimed") && card && (
+        {restoreChecked && (phase === "revealed" || phase === "claimed") && card && (
           <div className="space-y-10">
             <div className="flex flex-col items-center">
               <TiltCard>
