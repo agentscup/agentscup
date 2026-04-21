@@ -18,6 +18,7 @@ import TiltCard from "@/components/earlyAccess/TiltCard";
 import ShareClaim from "@/components/earlyAccess/ShareClaim";
 import Confetti from "@/components/earlyAccess/Confetti";
 import Leaderboard from "@/components/earlyAccess/Leaderboard";
+import LaunchCountdownBadge from "@/components/earlyAccess/LaunchCountdown";
 
 type Phase =
   | "landing"
@@ -329,20 +330,7 @@ export default function EarlyAccessPage() {
               <TiltCard>
                 <FounderCard card={card} />
               </TiltCard>
-              {phase === "claimed" && (
-                <div
-                  className="mt-8 inline-flex items-center gap-2 px-4 py-2 font-pixel text-[9px] tracking-[0.3em] animate-[fade-up_0.5s_ease-out]"
-                  style={{
-                    background: "#1a1200",
-                    color: "#FFD700",
-                    border: "2px solid #FFD700",
-                    boxShadow:
-                      "inset -2px -2px 0 #8a6f00, inset 2px 2px 0 #FFF4B0, 3px 3px 0 rgba(0,0,0,0.5)",
-                  }}
-                >
-                  ✓ SPOT LOCKED — SEE YOU ON LAUNCH DAY
-                </div>
-              )}
+              {phase === "claimed" && <LaunchCountdownBadge />}
             </div>
 
             {phase === "revealed" && (
