@@ -56,9 +56,12 @@ export interface FounderCard {
  * Follower-count → rarity points. Exported so the TaskList meter can
  * preview the exact same bonus the reveal will apply.
  *
- * Thresholds are set so each tier boundary lines up with a follower
- * milestone — jitter (0-10) never crosses a tier by itself:
+ * Thresholds are calibrated for the Base ecosystem — the "whale"
+ * bracket sits at 20k+ because accounts above that are genuinely
+ * rare on-chain, not at 100k+ where most days have zero qualifying
+ * sign-ups:
  *
+ *   20k+ followers → 105  → whale tier (LEGENDARY + headroom)
  *   10k+ followers →  90  → LEGENDARY floor
  *    2k+ followers →  60  → EPIC floor
  *    1k+ followers →  30  → RARE floor
@@ -74,7 +77,7 @@ export function followerTierBonus(followerCount: number | undefined): {
   points: number;
 } {
   const n = followerCount ?? 0;
-  if (n >= 100_000) return { label: "100k+ followers", points: 105 };
+  if (n >= 20_000) return { label: "20k+ followers", points: 105 };
   if (n >= 10_000) return { label: "10k+ followers", points: 90 };
   if (n >= 2_000) return { label: "2k+ followers", points: 60 };
   if (n >= 1_000) return { label: "1k+ followers", points: 30 };
