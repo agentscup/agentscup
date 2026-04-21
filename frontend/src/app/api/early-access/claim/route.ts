@@ -28,7 +28,12 @@ export async function POST(req: Request) {
     );
   }
 
-  let body: { handle?: string; tweetUrl?: string; claimId?: string };
+  let body: {
+    handle?: string;
+    tweetUrl?: string;
+    claimId?: string;
+    walletAddress?: string;
+  };
   try {
     body = (await req.json()) as typeof body;
   } catch {
@@ -37,6 +42,7 @@ export async function POST(req: Request) {
 
   const handle = body.handle?.toLowerCase().replace(/^@/, "").trim();
   const tweetUrl = body.tweetUrl?.trim();
+  const walletAddress = body.walletAddress?.trim().toLowerCase();
 
   if (!handle || !tweetUrl) {
     return NextResponse.json(
@@ -47,6 +53,12 @@ export async function POST(req: Request) {
   if (!isLikelyTweetUrl(tweetUrl)) {
     return NextResponse.json(
       { error: "tweetUrl is not a tweet URL" },
+      { status: 400 }
+    );
+  }
+  if (!walletAddress || !/^0x[a-f0-9]{40}$/.test(walletAddress)) {
+    return NextResponse.json(
+      { error: "walletAddress must be a valid 0x-prefixed EVM address" },
       { status: 400 }
     );
   }
@@ -149,6 +161,8 @@ export async function POST(req: Request) {
       claimed_at: new Date().toISOString(),
       verification_status: verificationStatus,
       verified_at: verificationStatus === "verified" ? new Date().toISOString() : null,
+      evm_address: walletAddress,
+      wallet_recorded_at: new Date().toISOString(),
     })
     .eq("id", existing.id);
 

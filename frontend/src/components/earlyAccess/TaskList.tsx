@@ -94,6 +94,9 @@ export default function TaskList({
   const rarity = scoreToRarity(score);
   const maxScore = handleJitter + 50 + 15 + 10 + 15;
 
+  const tasksDone = TASKS.every((t) => tasks[t.key]);
+  const remaining = TASKS.filter((t) => !tasks[t.key]).length;
+
   return (
     <div className="max-w-md mx-auto w-full animate-[fade-up_0.4s_ease-out]">
       <div className="text-center mb-6">
@@ -123,14 +126,13 @@ export default function TaskList({
 
       <button
         onClick={onReveal}
-        className="w-full mt-8 pixel-btn text-[10px] py-4 tracking-[0.3em]"
+        disabled={!tasksDone}
+        className="w-full mt-8 pixel-btn text-[10px] py-4 tracking-[0.3em] disabled:opacity-40 disabled:cursor-not-allowed"
       >
-        REVEAL MY CARD ↗
+        {tasksDone
+          ? "REVEAL MY CARD ↗"
+          : `COMPLETE ${remaining} MORE TO REVEAL`}
       </button>
-
-      <p className="mt-3 font-pixel text-[7px] text-white/30 tracking-wider text-center">
-        TASKS ARE OPTIONAL — REVEAL ANY TIME
-      </p>
 
       <style jsx>{`
         @keyframes fade-up {

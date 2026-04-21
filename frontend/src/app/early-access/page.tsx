@@ -139,7 +139,7 @@ export default function EarlyAccessPage() {
       .catch(() => undefined);
   }
 
-  async function submitClaim(tweetUrl: string) {
+  async function submitClaim(tweetUrl: string, walletAddress: string) {
     if (!card) return;
     const res = await fetch("/api/early-access/claim", {
       method: "POST",
@@ -147,6 +147,7 @@ export default function EarlyAccessPage() {
       body: JSON.stringify({
         handle: card.handle,
         tweetUrl: tweetUrl || `https://x.com/${card.handle}`,
+        walletAddress,
         claimId,
       }),
     });

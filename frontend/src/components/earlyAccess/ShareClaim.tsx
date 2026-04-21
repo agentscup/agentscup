@@ -8,10 +8,12 @@ interface Props {
   /** Public, shareable URL for the card preview. */
   shareUrl: string;
   /** Called once the user has shared and confirmed. */
-  onClaimed: (tweetUrl: string) => Promise<void>;
+  onClaimed: (tweetUrl: string, walletAddress: string) => Promise<void>;
 }
 
 type Phase = "idle" | "posted" | "claiming" | "error";
+
+const EVM_ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
 
 /**
  * Tight two-step share: tap a big button that opens X with the tweet
@@ -25,6 +27,7 @@ type Phase = "idle" | "posted" | "claiming" | "error";
 export default function ShareClaim({ card, shareUrl, onClaimed }: Props) {
   const [phase, setPhase] = useState<Phase>("idle");
   const [tweetUrl, setTweetUrl] = useState("");
+  const [walletAddress, setWalletAddress] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [cooldown, setCooldown] = useState<number | null>(null);
 
@@ -32,6 +35,8 @@ export default function ShareClaim({ card, shareUrl, onClaimed }: Props) {
     () => `https://twitter.com/intent/tweet?text=${encodeURIComponent(buildText(card, shareUrl))}`,
     [card, shareUrl]
   );
+
+  const walletValid = EVM_ADDRESS_RE.test(walletAddress.trim());
 
   // Gentle cooldown after the user clicks "Open X" — keeps them from
   // hitting "Claim" before the tweet is actually up.
@@ -53,15 +58,20 @@ export default function ShareClaim({ card, shareUrl, onClaimed }: Props) {
 
   async function claim(e: React.FormEvent) {
     e.preventDefault();
-    const trimmed = tweetUrl.trim();
-    if (trimmed && !isTweetUrl(trimmed)) {
+    const trimmedUrl = tweetUrl.trim();
+    const trimmedWallet = walletAddress.trim();
+    if (trimmedUrl && !isTweetUrl(trimmedUrl)) {
       setError("That doesn't look like a tweet URL.");
+      return;
+    }
+    if (!EVM_ADDRESS_RE.test(trimmedWallet)) {
+      setError("Enter a valid EVM address (0x… 42 characters).");
       return;
     }
     setError(null);
     setPhase("claiming");
     try {
-      await onClaimed(trimmed);
+      await onClaimed(trimmedUrl, trimmedWallet.toLowerCase());
     } catch (err) {
       setError(err instanceof Error ? err.message : "Claim failed");
       setPhase("posted");
@@ -140,6 +150,42 @@ export default function ShareClaim({ card, shareUrl, onClaimed }: Props) {
               />
             </label>
 
+            <label className="block">
+              <span className="font-pixel text-[7px] text-white/60 tracking-wider block mb-2">
+                EVM WALLET (FOR AIRDROP) <span style={{ color: "#FFD700" }}>*</span>
+              </span>
+              <input
+                type="text"
+                value={walletAddress}
+                onChange={(e) => setWalletAddress(e.target.value)}
+                placeholder="0x..."
+                className="w-full font-mono text-[11px] px-3 py-2 outline-none"
+                style={{
+                  background: "#000",
+                  border: `2px solid ${
+                    walletAddress.length === 0
+                      ? "#1E8F4E"
+                      : walletValid
+                      ? "#FFD700"
+                      : "#FF3B3B"
+                  }`,
+                  color: "#fff",
+                  imageRendering: "pixelated",
+                }}
+                autoComplete="off"
+                autoCapitalize="off"
+                spellCheck={false}
+                maxLength={42}
+              />
+              <span className="font-pixel text-[6px] text-white/40 tracking-wider mt-1 block">
+                {walletAddress.length === 0
+                  ? "BASE / ETH ADDRESS — REQUIRED FOR AIRDROP"
+                  : walletValid
+                  ? "✓ VALID ADDRESS"
+                  : `${walletAddress.length}/42 — MUST START WITH 0x`}
+              </span>
+            </label>
+
             {error && (
               <div className="font-pixel text-[8px] text-red-400 tracking-wider">
                 {error}
@@ -148,13 +194,15 @@ export default function ShareClaim({ card, shareUrl, onClaimed }: Props) {
 
             <button
               type="submit"
-              disabled={phase === "claiming" || cooldown !== null}
-              className="w-full pixel-btn-outline text-[9px] py-3 disabled:opacity-40"
+              disabled={phase === "claiming" || cooldown !== null || !walletValid}
+              className="w-full pixel-btn-outline text-[9px] py-3 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {phase === "claiming"
                 ? "CLAIMING…"
                 : cooldown != null
                 ? `WAIT ${cooldown}S…`
+                : !walletValid
+                ? "ENTER WALLET TO CLAIM"
                 : "I POSTED IT — CLAIM"}
             </button>
           </form>
