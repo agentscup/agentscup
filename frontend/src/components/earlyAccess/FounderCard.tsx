@@ -50,25 +50,16 @@ export default function FounderCard({ card, animated = true, scale = 1 }: Props)
           imageRendering: "pixelated",
         }}
       >
-        {/* Top stripe: FOUNDER + rarity */}
+        {/* Top stripe: rarity only, centered */}
         <div
-          className="relative flex items-center justify-between px-3 py-2"
+          className="relative flex items-center justify-center px-3 py-2"
           style={{
             background: theme.stripe,
             borderBottom: `3px solid ${theme.borderDark}`,
           }}
         >
           <span
-            className="font-pixel text-[8px] tracking-[0.3em]"
-            style={{
-              color: theme.stripeText,
-              textShadow: `1px 1px 0 ${theme.borderDark}`,
-            }}
-          >
-            FOUNDER
-          </span>
-          <span
-            className="font-pixel text-[8px] tracking-[0.2em]"
+            className="font-pixel text-[9px] tracking-[0.35em]"
             style={{
               color: theme.stripeText,
               textShadow: `1px 1px 0 ${theme.borderDark}`,
