@@ -1,6 +1,11 @@
 import { ImageResponse } from "next/og";
 import { createClient } from "@supabase/supabase-js";
-import { generateCard, upgradeAvatarUrl, Rarity } from "@/lib/earlyAccess/cardGen";
+import {
+  generateCard,
+  upgradeAvatarUrl,
+  scoreToRarity,
+  Rarity,
+} from "@/lib/earlyAccess/cardGen";
 
 export const runtime = "edge";
 
@@ -378,7 +383,10 @@ async function fetchCard(handle: string) {
     displayName: (data.x_display_name as string | null) ?? (data.x_handle as string),
     avatarUrl: (data.x_avatar_url as string | null) ?? undefined,
     position: data.position as "ST",
-    rarity: data.rarity as Rarity,
+    // Derive rarity at render time so the share card always reflects
+    // the current scoring rules rather than a stored label that may
+    // be stale from an earlier formula.
+    rarity: scoreToRarity(data.score as number) as Rarity,
     score: data.score as number,
     overall: data.overall as number,
     stats: data.stats as {

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { createClient } from "@supabase/supabase-js";
-import { generateCard, upgradeAvatarUrl } from "@/lib/earlyAccess/cardGen";
+import { generateCard, upgradeAvatarUrl, scoreToRarity } from "@/lib/earlyAccess/cardGen";
 import FounderCard from "@/components/earlyAccess/FounderCard";
 
 interface Params {
@@ -26,7 +26,9 @@ export default async function FounderCardPage({ params }: Params) {
         displayName: claim.x_display_name ?? claim.x_handle,
         avatarUrl: upgradeAvatarUrl(claim.x_avatar_url ?? undefined),
         position: claim.position,
-        rarity: claim.rarity,
+        // Derive rarity from the live score so refresh-time labels
+        // track the current thresholds, not the stale DB value.
+        rarity: scoreToRarity(claim.score),
         score: claim.score,
         overall: claim.overall,
         stats: claim.stats,

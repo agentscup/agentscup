@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { upgradeAvatarUrl } from "@/lib/earlyAccess/cardGen";
+import { upgradeAvatarUrl, scoreToRarity } from "@/lib/earlyAccess/cardGen";
 
 /**
  * GET /api/early-access/leaderboard
@@ -59,20 +59,29 @@ export async function GET(req: Request) {
     return NextResponse.json({ rows: [], total: 0 });
   }
 
-  const rows = (rowsRes.data ?? []).map((r, i) => ({
-    rank: i + 1,
-    handle: r.x_handle as string,
-    displayName:
-      (r.x_display_name as string | null) ?? (r.x_handle as string),
-    avatarUrl:
-      upgradeAvatarUrl((r.x_avatar_url as string | null) ?? undefined) ??
-      `https://unavatar.io/twitter/${encodeURIComponent(r.x_handle as string)}`,
-    followerCount: (r.follower_count as number | null) ?? 0,
-    rarity: r.rarity as "COMMON" | "RARE" | "EPIC" | "LEGENDARY",
-    overall: r.overall as number,
-    score: r.score as number,
-    position: r.position as string,
-  }));
+  const rows = (rowsRes.data ?? []).map((r, i) => {
+    const score = (r.score as number) ?? 0;
+    // Derive rarity from score at read time rather than trusting the
+    // stored value — the rarity column on old rows carried labels
+    // from earlier scoring rules (when task points counted) and went
+    // stale once the formula changed. Score itself stays canonical
+    // and drives the sort; we just re-label.
+    const rarity = scoreToRarity(score);
+    return {
+      rank: i + 1,
+      handle: r.x_handle as string,
+      displayName:
+        (r.x_display_name as string | null) ?? (r.x_handle as string),
+      avatarUrl:
+        upgradeAvatarUrl((r.x_avatar_url as string | null) ?? undefined) ??
+        `https://unavatar.io/twitter/${encodeURIComponent(r.x_handle as string)}`,
+      followerCount: (r.follower_count as number | null) ?? 0,
+      rarity,
+      overall: r.overall as number,
+      score,
+      position: r.position as string,
+    };
+  });
 
   return NextResponse.json(
     {
