@@ -35,7 +35,12 @@ if (process.env.X_CLIENT_ID && process.env.X_CLIENT_SECRET) {
       clientSecret: process.env.X_CLIENT_SECRET,
       authorization: {
         params: {
-          scope: "users.read tweet.read follows.read offline.access",
+          // Minimum possible X OAuth scope — just enough to prove the
+          // user owns the account (we get id + username + avatar).
+          // No tweet access, no follow list, no posting. Heavy API
+          // reads for the async verifier go through the app-only
+          // Bearer Token, which doesn't need user-granted scopes.
+          scope: "users.read",
         },
       },
     })
