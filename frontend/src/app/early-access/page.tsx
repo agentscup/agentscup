@@ -17,6 +17,7 @@ import FounderCard from "@/components/earlyAccess/FounderCard";
 import TiltCard from "@/components/earlyAccess/TiltCard";
 import ShareClaim from "@/components/earlyAccess/ShareClaim";
 import Confetti from "@/components/earlyAccess/Confetti";
+import Leaderboard from "@/components/earlyAccess/Leaderboard";
 
 type Phase =
   | "landing"
@@ -302,10 +303,15 @@ export default function EarlyAccessPage() {
         )}
 
         {restoreChecked && phase === "landing" && (
-          <LandingHero
-            onStart={() => setPhase("handle")}
-            signInWith={oauthAvailable ? <SignInWithX /> : null}
-          />
+          <>
+            <LandingHero
+              onStart={() => setPhase("handle")}
+              signInWith={oauthAvailable ? <SignInWithX /> : null}
+            />
+            <div className="max-w-[460px] mx-auto w-full mt-4">
+              <Leaderboard limit={5} compact />
+            </div>
+          </>
         )}
 
         {restoreChecked && phase === "handle" && !oauthAvailable && (
@@ -365,6 +371,12 @@ export default function EarlyAccessPage() {
                 shareUrl={shareUrl}
                 onClaimed={submitClaim}
               />
+            )}
+
+            {phase === "claimed" && (
+              <div className="max-w-[520px] mx-auto w-full mt-4">
+                <Leaderboard limit={20} highlightHandle={card.handle} />
+              </div>
             )}
           </div>
         )}
