@@ -26,22 +26,22 @@ if (process.env.X_CLIENT_ID && process.env.X_CLIENT_SECRET) {
       clientId: process.env.X_CLIENT_ID,
       clientSecret: process.env.X_CLIENT_SECRET,
       authorization: {
-        url: "https://twitter.com/i/oauth2/authorize",
+        // Use the x.com domains — twitter.com still works as a
+        // redirect but some newer app configs return 403 from the
+        // legacy host. Safest to match what X's current docs show.
+        url: "https://x.com/i/oauth2/authorize",
         params: {
           scope: "users.read",
         },
       },
-      token: { url: "https://api.twitter.com/2/oauth2/token" },
+      token: { url: "https://api.x.com/2/oauth2/token" },
       userinfo: {
-        url: "https://api.twitter.com/2/users/me",
+        url: "https://api.x.com/2/users/me",
         params: {
           "user.fields": "id,name,username,profile_image_url",
         },
       },
       profile(raw) {
-        // X API v2 wraps the user payload in `{ data: {...} }`. Some
-        // environments (or future provider updates) can unwrap it
-        // already — accept both shapes defensively.
         const src = raw as {
           data?: {
             id?: string;
@@ -53,11 +53,24 @@ if (process.env.X_CLIENT_ID && process.env.X_CLIENT_SECRET) {
           name?: string;
           username?: string;
           profile_image_url?: string;
+          title?: string;
+          detail?: string;
+          status?: number;
         };
         const data = src.data ?? src;
         if (!data?.id) {
-          console.error("[auth] X profile response missing id:", JSON.stringify(raw));
-          throw new Error("X profile response missing id");
+          // Surface the upstream error verbatim so rate-limit / 403
+          // / scope-mismatch problems show up in server logs
+          // instead of a generic Auth.js 500.
+          console.error(
+            "[auth] X /2/users/me response missing id:",
+            JSON.stringify(raw)
+          );
+          const reason =
+            src.title || src.detail
+              ? `${src.title ?? ""}${src.status ? ` (${src.status})` : ""}: ${src.detail ?? ""}`.trim()
+              : "X /2/users/me returned no user data";
+          throw new Error(`X profile parse failed — ${reason}`);
         }
         return {
           id: String(data.id),
