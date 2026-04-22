@@ -20,6 +20,8 @@ const ConnectButton = dynamic(
 
 const NAV_LINKS = [
   { href: "/", label: "HOME" },
+  { href: "/claim", label: "CLAIM", highlight: true },
+  { href: "/airdrop-apply", label: "APPLY" },
   { href: "/packs", label: "PACKS" },
   { href: "/leaderboard", label: "BOARD" },
   { href: "/squad", label: "SQUAD" },
@@ -61,6 +63,7 @@ export default function Navbar() {
           <div className="hidden md:flex items-center gap-0.5">
             {NAV_LINKS.map((link) => {
               const isActive = pathname === link.href;
+              const isHighlighted = link.highlight && !isActive;
               return (
                 <Link
                   key={link.href}
@@ -68,11 +71,15 @@ export default function Navbar() {
                   className={`px-3 py-2 font-pixel text-[7px] tracking-wider transition-all ${
                     isActive
                       ? "text-white bg-[#1E8F4E]"
+                      : isHighlighted
+                      ? "text-[#0a0a0a] bg-[#FFD700] hover:bg-[#ffdf33] animate-pulse"
                       : "text-white/60 hover:text-white hover:bg-white/5"
                   }`}
                   style={
                     isActive
                       ? { boxShadow: "inset -2px -2px 0 #0B6623, inset 2px 2px 0 #2eb060" }
+                      : isHighlighted
+                      ? { boxShadow: "inset -2px -2px 0 #b8860b, inset 2px 2px 0 #ffdf66" }
                       : {}
                   }
                 >
@@ -106,6 +113,7 @@ export default function Navbar() {
           <div className="md:hidden pb-4 space-y-1 border-t-2 border-[#0B6623] pt-2">
             {NAV_LINKS.map((link) => {
               const isActive = pathname === link.href;
+              const isHighlighted = link.highlight && !isActive;
               return (
                 <Link
                   key={link.href}
@@ -114,6 +122,8 @@ export default function Navbar() {
                   className={`block px-3 py-2 font-pixel text-[8px] tracking-wider transition-colors ${
                     isActive
                       ? "text-white bg-[#1E8F4E]"
+                      : isHighlighted
+                      ? "text-[#0a0a0a] bg-[#FFD700]"
                       : "text-white/60 hover:text-white"
                   }`}
                 >

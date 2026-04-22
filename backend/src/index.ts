@@ -10,6 +10,7 @@ import squadRoutes from "./routes/squads";
 import matchRoutes from "./routes/matches";
 import marketplaceRoutes from "./routes/marketplace";
 import leaderboardRoutes from "./routes/leaderboard";
+import airdropRoutes from "./routes/airdrop";
 import { setupMatchSocket } from "./socket/matchSocket";
 import { generalLimiter } from "./middleware/rateLimiter";
 import { publicClient, treasuryAddress, MATCH_ENTRY_FEE_WEI } from "./lib/evm";
@@ -84,6 +85,7 @@ app.use("/api/squads", squadRoutes);
 app.use("/api/matches", matchRoutes);
 app.use("/api/marketplace", marketplaceRoutes);
 app.use("/api/leaderboard", leaderboardRoutes);
+app.use("/api/airdrop", airdropRoutes);
 
 // Socket.io for real-time matches
 setupMatchSocket(io);
