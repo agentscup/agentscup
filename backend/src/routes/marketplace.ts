@@ -109,22 +109,33 @@ router.post("/list", async (req: Request, res: Response) => {
       .update({ is_listed: true })
       .eq("id", userAgentId);
 
+    // The legacy `price_cup` column is `numeric(18,0)` — max of
+    // 999,999,999,999,999,999 (18 digits). 1 ETH = 10^18 wei overflows
+    // this column by one digit and causes Postgres to reject the whole
+    // INSERT with "numeric field overflow", which surfaces on the
+    // client as "Failed to list agent". Widening the column requires
+    // a DB-owner DDL migration (see base_migration_v3.sql) — until ops
+    // can run that in the Supabase SQL editor, we cap `price_cup` at
+    // the column's max so the INSERT always succeeds. `price_wei` is
+    // the uncapped numeric column added by base_migration_v2.sql and
+    // is the canonical source both reads and the contract verifier
+    // go through — the capped `price_cup` is purely a compatibility
+    // value for RLS/legacy reads that don't join `price_wei`.
+    const PRICE_CUP_MAX = 999_999_999_999_999_999n; // 10^18 - 1
+    const priceCupStored =
+      priceWeiNum > PRICE_CUP_MAX ? PRICE_CUP_MAX : priceWeiNum;
+
     const { data, error } = await supabase
       .from("listings")
       .insert({
         user_agent_id: userAgentId,
         seller_wallet: walletLower,
         seller_evm_address: walletLower,
-        // IMPORTANT: pass the wei value as a STRING to the numeric
-        // columns, not `Number(bigint)`. JS `Number` only has 53 bits
-        // of integer precision (~9×10^15), and every ETH price above
-        // ~0.009 ETH exceeds that. Passing a lossy float corrupted
-        // the stored price AND overflowed the legacy `numeric(18,0)`
-        // price_cup column for listings ≥ 1 ETH (10^18 wei = 19 digits).
-        // Supabase PostgREST accepts string form for numeric columns
-        // and preserves full precision. Pair this with
-        // base_migration_v3.sql which widens price_cup to numeric(40,0).
-        price_cup: priceWeiNum.toString(),
+        // STRING form, not `Number(bigint)`. JS Number has 53 bits of
+        // integer precision (~9×10^15), and every ETH listing above
+        // ~0.009 ETH exceeds that. PostgREST accepts string form for
+        // numeric columns and preserves precision bit-for-bit.
+        price_cup: priceCupStored.toString(),
         price_wei: priceWeiNum.toString(),
         listing_id_hex: listingIdLower,
         listing_type: listingType || "fixed",
