@@ -1,0 +1,17 @@
+{
+  "network": "base",
+  "chainId": 8453,
+  "deployer": "0x5A31f465064Cb00a99F0885c480927B5ea906568",
+  "contracts": {
+    "AgentsCupPackStore": "0xD35F2536043786e27453A2A58e084905bd6D0ce2",
+    "AgentsCupMarketplace": "0x9983D5c374A656De96804a4195983Fd3021Ea705",
+    "AgentsCupMatchEscrow": "0x98dD410D8D5EcAdf425B118e6BAc1762FE47A20C"
+  },
+  "config": {
+    "treasury": "0x5A31f465064Cb00a99F0885c480927B5ea906568",
+    "admin": "0x5A31f465064Cb00a99F0885c480927B5ea906568",
+    "feeBps": 250,
+    "matchEntryFee": "0.001 ETH"
+  },
+  "deployedAt": "2026-04-22T06:58:16.337Z"
+}

@@ -4,18 +4,18 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
-import { useWallet } from "@solana/wallet-adapter-react";
 import dynamic from "next/dynamic";
 
 /*
- * WalletMultiButton must be dynamically imported with ssr:false
- * to avoid hydration mismatch and Safari issues.
- * It handles: modal open, wallet detection, connect/disconnect,
- * deep-link fallbacks, and all browser edge cases.
+ * RainbowKit's ConnectButton is a client component that reaches
+ * into wagmi + WalletConnect. We load it dynamically with ssr:false
+ * so the server bundle stays clean and iOS Safari doesn't hit
+ * hydration mismatches on first paint.
  */
-const WalletMultiButton = dynamic(
-  () => import("@solana/wallet-adapter-react-ui").then((mod) => mod.WalletMultiButton),
-  { ssr: false },
+const ConnectButton = dynamic(
+  () =>
+    import("@rainbow-me/rainbowkit").then((mod) => mod.ConnectButton),
+  { ssr: false }
 );
 
 const NAV_LINKS = [
@@ -30,7 +30,6 @@ const NAV_LINKS = [
 export default function Navbar() {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const { connected } = useWallet();
 
   return (
     <nav
@@ -85,13 +84,18 @@ export default function Navbar() {
 
           {/* Wallet button — desktop */}
           <div className="hidden md:block wallet-btn-wrapper">
-            <WalletMultiButton />
+            <ConnectButton
+              accountStatus="address"
+              chainStatus="icon"
+              showBalance={false}
+            />
           </div>
 
           {/* Mobile hamburger */}
           <button
             className="md:hidden p-2 text-white"
             onClick={() => setMobileOpen(!mobileOpen)}
+            aria-label="Toggle menu"
           >
             <span className="font-pixel text-xs">{mobileOpen ? "X" : "="}</span>
           </button>
@@ -118,8 +122,12 @@ export default function Navbar() {
               );
             })}
             {/* Wallet button — mobile */}
-            <div className="pt-2 wallet-btn-wrapper wallet-btn-mobile">
-              <WalletMultiButton />
+            <div className="pt-2 wallet-btn-wrapper wallet-btn-mobile flex justify-center">
+              <ConnectButton
+                accountStatus="address"
+                chainStatus="icon"
+                showBalance={false}
+              />
             </div>
           </div>
         )}

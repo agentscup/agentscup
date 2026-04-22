@@ -3,30 +3,21 @@ import { supabase } from "../lib/supabase";
 
 const router = Router();
 
-/* ── Random team name generator ─────────────────────────────────── */
-const ADJECTIVES = [
-  "Atomic", "Blazing", "Cosmic", "Dark", "Electric", "Frozen",
-  "Golden", "Hyper", "Iron", "Jade", "Killer", "Lunar",
-  "Mega", "Neon", "Omega", "Pixel", "Quantum", "Rogue",
-  "Shadow", "Turbo", "Ultra", "Venom", "Wild", "Zero",
-  "Binary", "Cyber", "Digital", "Flux", "Glitch", "Hex",
-  "Inferno", "Nitro", "Onyx", "Plasma", "Rapid", "Stealth",
-];
-
-const NOUNS = [
-  "Wolves", "Dragons", "Titans", "Hawks", "Vipers", "Panthers",
-  "Knights", "Legends", "Strikers", "Phantoms", "Foxes", "Bears",
-  "Lions", "Sharks", "Eagles", "Cobras", "Falcons", "Spartans",
-  "Ninjas", "Rockets", "Bots", "Agents", "Nodes", "Stacks",
-  "Bytes", "Cores", "Chips", "Daemons", "Vectors", "Wardens",
-  "Sentinels", "Reapers", "Rovers", "Bolts", "Hammers", "Blades",
-];
-
-function generateTeamName(): string {
-  const adj = ADJECTIVES[Math.floor(Math.random() * ADJECTIVES.length)];
-  const noun = NOUNS[Math.floor(Math.random() * NOUNS.length)];
-  const num = Math.floor(Math.random() * 100);
-  return `${adj} ${noun} ${num}`;
+/**
+ * Default team name derived from the wallet address itself: the
+ * first 6 chars (incl. the 0x) plus an ellipsis plus the last 4 —
+ * e.g. `0x5A31…6568`. Deterministic, collision-free, and reads
+ * naturally in the leaderboard UI without a runtime random step.
+ * Players can still rename via /api/leaderboard/team-name.
+ */
+function teamNameFromWallet(wallet: string): string {
+  const w = (wallet ?? "").trim();
+  if (!/^0x[a-fA-F0-9]{40}$/.test(w)) {
+    // Shouldn't happen — connect route validates shape first — but
+    // a fallback keeps the insert from crashing if it ever does.
+    return "Player";
+  }
+  return `${w.slice(0, 6)}…${w.slice(-4)}`;
 }
 
 // POST /api/users/connect — upsert user by wallet
@@ -56,7 +47,10 @@ router.post("/connect", async (req: Request, res: Response) => {
     if (!existing) {
       await supabase
         .from("leaderboard")
-        .insert({ user_id: data.id, team_name: generateTeamName() });
+        .insert({
+          user_id: data.id,
+          team_name: teamNameFromWallet(walletAddress),
+        });
     }
 
     res.json(data);

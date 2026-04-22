@@ -273,46 +273,64 @@ export const ALL_AGENTS: Agent[] = [
 /*  PACK TYPES                                                         */
 /* ================================================================== */
 
+/**
+ * Pack catalogue mirrored from the backend's PACK_CONFIGS. The values
+ * MUST stay in sync with backend/src/services/packService.ts —
+ * particularly `priceWei` and `tier`, because those are the two
+ * numbers the on-chain PackStore + backend verifier compare.
+ *
+ * Changing prices? Update both files and redeploy them in the same
+ * drop; the DB stores `price_wei` on each purchase row so historical
+ * data is preserved through tuning changes.
+ */
 export const PACK_TYPES: PackType[] = [
   {
     id: 'starter',
     name: 'Starter Pack',
-    priceCup: 250_000,
-    cardCount: 5,
+    tier: 1,
+    priceEth: '0.002',
+    priceWei: '2000000000000000',
+    cardCount: 4,
     rareGuarantee: 0,
     epicChance: 0.02,
     legendaryChance: 0.003,
-    description: 'Begin your journey with 5 random agents',
+    description: 'Begin your journey with 4 random agents',
   },
   {
     id: 'pro',
     name: 'Pro Pack',
-    priceCup: 500_000,
-    cardCount: 8,
+    tier: 2,
+    priceEth: '0.004',
+    priceWei: '4000000000000000',
+    cardCount: 7,
     rareGuarantee: 1,
     epicChance: 0.05,
     legendaryChance: 0.008,
-    description: 'Better odds, more agents',
+    description: 'Better odds, 7 agents — 1 rare+ guaranteed',
   },
   {
     id: 'elite',
     name: 'Elite Pack',
-    priceCup: 1_000_000,
+    tier: 3,
+    priceEth: '0.015',
+    priceWei: '15000000000000000',
     cardCount: 12,
     rareGuarantee: 3,
-    epicChance: 0.35,
-    legendaryChance: 0.12,
-    description: 'High-tier agents await',
+    epicChance: 0.25,
+    legendaryChance: 0.05,
+    description: 'High-tier agents with 25% epic odds',
   },
   {
     id: 'legendary',
     name: 'Legendary Pack',
-    priceCup: 2_000_000,
+    tier: 4,
+    priceEth: '0.05',
+    priceWei: '50000000000000000',
     cardCount: 15,
     rareGuarantee: 5,
-    epicChance: 0.50,
-    legendaryChance: 0.25,
-    description: 'The ultimate pack for the ultimate collector',
+    epicChance: 0.35,
+    legendaryChance: 0.2,
+    description: '20% legendary odds — the ultimate collector pack',
   },
 ];
 

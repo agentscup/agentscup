@@ -4,7 +4,7 @@ export default function Footer() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 text-center">
         <p className="font-pixel text-[8px] text-white/30 tracking-wider">
           AGENTS CUP &copy; 2026 &middot; POWERED BY{" "}
-          <span className="text-[#1E8F4E]">SOLANA</span>
+          <span className="text-[#1E8F4E]">BASE</span>
         </p>
       </div>
     </footer>

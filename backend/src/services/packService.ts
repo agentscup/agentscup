@@ -1,44 +1,74 @@
 import { supabase } from "../lib/supabase";
 import crypto from "crypto";
 
+/**
+ * Pack prices are stored twice: once as human-readable ETH for
+ * display, and once as wei (BigInt-safe string) for on-chain
+ * verification. The frontend sends the wei amount when it calls
+ * AgentsCupPackStore.buyPack, and the backend's verifier compares
+ * bit-for-bit against `priceWei` below.
+ *
+ * Tune these numbers by editing this file + bumping tiers; no
+ * redeploy of the smart contract is needed since the PackStore
+ * contract accepts any amount (the event records what was paid,
+ * we validate the amount matches the tier's configured price).
+ */
 export const PACK_CONFIGS = {
   starter: {
     name: "Starter Pack",
-    priceCup: 250_000,
-    cardCount: 5,
+    tier: 1,
+    priceEth: "0.002",
+    priceWei: "2000000000000000", // 0.002 ETH
+    cardCount: 4,
     rareGuarantee: 0,
     epicChance: 0.02,
     legendaryChance: 0.003,
-    description: "5 cards — mostly common, small rare chance",
+    description: "4 cards — mostly common, small rare chance",
   },
   pro: {
     name: "Pro Pack",
-    priceCup: 500_000,
-    cardCount: 8,
+    tier: 2,
+    priceEth: "0.004",
+    priceWei: "4000000000000000", // 0.004 ETH
+    cardCount: 7,
     rareGuarantee: 1,
     epicChance: 0.05,
     legendaryChance: 0.008,
-    description: "8 cards with 1 guaranteed rare+",
+    description: "7 cards with 1 guaranteed rare+",
   },
   elite: {
     name: "Elite Pack",
-    priceCup: 1_000_000,
+    tier: 3,
+    priceEth: "0.015",
+    priceWei: "15000000000000000", // 0.015 ETH
     cardCount: 12,
     rareGuarantee: 3,
-    epicChance: 0.2,
+    epicChance: 0.25,
     legendaryChance: 0.05,
-    description: "12 cards with 3 guaranteed rare+",
+    description: "12 cards with 3 guaranteed rare+ and 25% epic odds",
   },
   legendary: {
     name: "Legendary Pack",
-    priceCup: 2_000_000,
+    tier: 4,
+    priceEth: "0.05",
+    priceWei: "50000000000000000", // 0.05 ETH
     cardCount: 15,
     rareGuarantee: 5,
     epicChance: 0.35,
-    legendaryChance: 0.15,
-    description: "15 cards with 5 guaranteed rare+ and high legendary chance",
+    legendaryChance: 0.2,
+    description: "15 cards with 5 guaranteed rare+ and 20% legendary odds",
   },
 } as const;
+
+export type PackType = keyof typeof PACK_CONFIGS;
+
+/** Reverse-lookup: given a numeric on-chain pack tier, return the key. */
+export function packTypeFromTier(tier: number): PackType | null {
+  for (const [key, cfg] of Object.entries(PACK_CONFIGS)) {
+    if (cfg.tier === tier) return key as PackType;
+  }
+  return null;
+}
 
 interface AgentRow {
   id: string;

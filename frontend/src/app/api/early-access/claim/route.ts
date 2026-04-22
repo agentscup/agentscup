@@ -63,15 +63,15 @@ export async function POST(req: Request) {
     );
   }
 
-  // Sanity: the tweet URL author segment should match the handle the
-  // user claimed with. Cheap pre-API-key check.
-  const authorFromUrl = extractTweetAuthor(tweetUrl);
-  if (authorFromUrl && authorFromUrl.toLowerCase() !== handle) {
-    return NextResponse.json(
-      { error: "Tweet author does not match your handle" },
-      { status: 400 }
-    );
-  }
+  // Author-match validation was intentionally removed — X display
+  // handles drift between OAuth profile and the current @username
+  // (renames, capitalisation differences, retweet URL shapes where
+  // the URL path carries the original author's handle, etc.) and
+  // real users were getting blocked with "Tweet author does not
+  // match your handle" despite posting a legit share tweet. The
+  // unique-per-handle DB constraint still stops replay / multi-
+  // claim, and the OAuth session binds the claim to the logged-in
+  // X account.
 
   // Real tweet verification when OAuth + Bearer Token are configured.
   //   1. Fetch the tweet via X API v2.
@@ -95,35 +95,23 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Unable to parse tweet id" }, { status: 400 });
     }
     try {
-      const tweet = await getTweetById(tweetId);
-      if (tweet.author_id !== xUserId) {
-        return NextResponse.json(
-          { error: "This tweet belongs to a different account" },
-          { status: 400 }
-        );
-      }
-      // Share URL must appear somewhere in the tweet body. We compare
-      // on lowercase and only match the path so Twitter's t.co
-      // wrappers don't trip the check.
-      const origin =
-        req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? "";
-      const needle = `/early-access/card/${handle}`.toLowerCase();
-      if (
-        !tweet.text.toLowerCase().includes(needle) &&
-        (!origin || !tweet.text.toLowerCase().includes(origin.toLowerCase()))
-      ) {
-        return NextResponse.json(
-          { error: "Tweet is missing your share link — post the prefilled text" },
-          { status: 400 }
-        );
-      }
+      // Fire a best-effort tweet lookup for bookkeeping. We no
+      // longer hard-fail on author mismatch or missing share URL —
+      // the X API 402 / rename / retweet edge-cases kept false-
+      // positive-failing real users. If the fetch succeeds cleanly
+      // we flip status to "verified" for analytics; otherwise the
+      // claim still goes through with status "pending".
+      await getTweetById(tweetId);
       verificationStatus = "verified";
     } catch (err) {
       const e = err as { status?: number };
-      // Treat 401 (expired / rotated Bearer Token), 429 (rate-limit),
-      // 5xx, and timeouts as transient — the claim goes through with
-      // `verification_status: pending` and the async worker will
-      // confirm the tweet later when the app credentials are healthy.
+      // Treat 401 (expired / rotated Bearer Token), 402 (X Basic
+      // paid-tier paywall on GET /2/tweets/:id under the current X
+      // API pricing — no app credits left), 403 (forbidden, usually
+      // scope), 429 (rate-limit), 5xx, and timeouts as transient.
+      // The claim goes through with `verification_status: pending`
+      // and the async worker can confirm later once we have a paid
+      // tier or credit balance.
       //
       // Only genuine client errors (400 malformed, 404 tweet missing)
       // hard-fail, because those mean the input itself is bad, not
@@ -131,6 +119,7 @@ export async function POST(req: Request) {
       const isTransient =
         !e.status ||
         e.status === 401 ||
+        e.status === 402 ||
         e.status === 403 ||
         e.status === 429 ||
         e.status === 408 ||
@@ -139,6 +128,11 @@ export async function POST(req: Request) {
         return NextResponse.json(
           { error: err instanceof Error ? err.message : "Tweet lookup failed" },
           { status: 400 }
+        );
+      }
+      if (e.status === 402) {
+        console.warn(
+          "[claim] X API 402 — app out of tweet-lookup credits, accepting claim as pending"
         );
       }
       // Transient failures: accept and let the async worker verify.
@@ -188,9 +182,4 @@ export async function POST(req: Request) {
 
 function isLikelyTweetUrl(url: string): boolean {
   return /^https?:\/\/(?:www\.)?(?:twitter|x)\.com\/[^/]+\/status\/\d+/.test(url);
-}
-
-function extractTweetAuthor(url: string): string | null {
-  const m = url.match(/^https?:\/\/(?:www\.)?(?:twitter|x)\.com\/([^/]+)\/status\/\d+/);
-  return m ? m[1] : null;
 }

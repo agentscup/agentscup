@@ -73,15 +73,24 @@ export async function seedAgents(agents: unknown[]) {
 }
 
 // ─── Packs ──────────────────────────────────────────────────────────
+/**
+ * Called after the frontend has already submitted
+ * AgentsCupPackStore.buyPack() on-chain. `txHash` is the keccak hash
+ * of that tx — the backend decodes the PackPurchased event, verifies
+ * buyer + amount match, then rolls cards.
+ */
 export async function openPack(
   walletAddress: string,
   packType: string,
-  txSignature?: string
+  txHash: string
 ) {
-  return request<{ cards: unknown[] }>("/packs/open", {
-    method: "POST",
-    body: JSON.stringify({ walletAddress, packType, txSignature }),
-  });
+  return request<{ cards: unknown[]; already_processed?: boolean }>(
+    "/packs/open",
+    {
+      method: "POST",
+      body: JSON.stringify({ walletAddress, packType, txHash }),
+    }
+  );
 }
 
 export async function getPackTypes() {
@@ -154,7 +163,11 @@ export async function getMarketplaceStats(): Promise<{
 export interface TradeHistoryRow {
   id: string;
   seller_wallet: string;
-  price_cup: number;
+  seller_evm_address: string | null;
+  /** Legacy col — holds wei on Base, $CUP base units on Solana rows. */
+  price_cup: number | null;
+  /** Canonical wei price string (Base only). */
+  price_wei: string | null;
   tx_signature: string;
   created_at: string;
   user_agents?: {
@@ -172,10 +185,19 @@ export async function getTradeHistory(limit = 20): Promise<TradeHistoryRow[]> {
   return request(`/marketplace/history?limit=${limit}`);
 }
 
+/**
+ * Creates the DB mirror of a listing the seller just posted on-chain.
+ * `listingIdHex` is the same bytes32 the seller passed to
+ * AgentsCupMarketplace.listAgent — it's how buyers later resolve the
+ * DB row back to the on-chain slot.
+ */
 export async function listAgent(data: {
   walletAddress: string;
   userAgentId: string;
-  priceCup: number;
+  /** Wei price as a decimal string (JSON-safe bigint). */
+  priceWei: string;
+  /** 0x-prefixed 32-byte hex string. */
+  listingIdHex: string;
   listingType?: string;
 }) {
   return request("/marketplace/list", {
@@ -187,7 +209,7 @@ export async function listAgent(data: {
 export async function buyAgent(data: {
   buyerWallet: string;
   listingId: string;
-  txSignature?: string;
+  txHash: string;
 }) {
   return request("/marketplace/buy", {
     method: "POST",

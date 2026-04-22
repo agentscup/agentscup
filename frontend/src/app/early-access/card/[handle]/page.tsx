@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { createClient } from "@supabase/supabase-js";
-import { generateCard, upgradeAvatarUrl, scoreToRarity } from "@/lib/earlyAccess/cardGen";
+import { generateCard, upgradeAvatarUrl, overallToRarity } from "@/lib/earlyAccess/cardGen";
 import FounderCard from "@/components/earlyAccess/FounderCard";
 
 interface Params {
@@ -26,9 +26,12 @@ export default async function FounderCardPage({ params }: Params) {
         displayName: claim.x_display_name ?? claim.x_handle,
         avatarUrl: upgradeAvatarUrl(claim.x_avatar_url ?? undefined),
         position: claim.position,
-        // Derive rarity from the live score so refresh-time labels
-        // track the current thresholds, not the stale DB value.
-        rarity: scoreToRarity(claim.score),
+        // Rarity is derived from the visible overall at render time
+        // so this page always agrees with the leaderboard — both use
+        // the same overall → tier map. Prevents old rows where the
+        // stored rarity was computed under the earlier overlapping
+        // floor/ceil ranges from showing a mismatched label.
+        rarity: overallToRarity(claim.overall),
         score: claim.score,
         overall: claim.overall,
         stats: claim.stats,

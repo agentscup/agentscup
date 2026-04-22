@@ -3,29 +3,24 @@
 import { useEffect, useState } from "react";
 
 export interface TaskState {
-  notificationsOn: boolean;
-  likePinned: boolean;
-  replyPinned: boolean;
+  follow: boolean;
+  like: boolean;
+  retweet: boolean;
+  reply: boolean;
 }
 
 /**
- * Drop-in target for the @agentscup pinned launch post. When empty,
- * like / reply tasks fall back to opening the profile so the player
- * can find the post manually. Set once the canonical tweet exists
- * and both tasks will deep-link straight into the X intent dialog.
- *
- * Paste the numeric id from the tweet URL — the one after `/status/`.
+ * Canonical launch-post link. All four tasks deep-link here — the
+ * tweet page shows the post and each task targets the matching X
+ * intent (like / retweet / reply), so the user can tap the action
+ * directly inside the native X UI. Follow points at the author
+ * profile.
  */
-const PINNED_TWEET_ID = ""; // e.g. "1809123456789012345"
-const AGENTSCUP_PROFILE = "https://x.com/agentscup";
-
-function pinnedIntent(action: "like" | "reply"): string {
-  if (!PINNED_TWEET_ID) return AGENTSCUP_PROFILE;
-  if (action === "like") {
-    return `https://twitter.com/intent/like?tweet_id=${PINNED_TWEET_ID}`;
-  }
-  return `https://twitter.com/intent/tweet?in_reply_to=${PINNED_TWEET_ID}`;
-}
+const LAUNCH_TWEET_URL =
+  "https://x.com/agentscup/status/2046635293353136453?s=20";
+const LAUNCH_TWEET_ID = "2046635293353136453";
+const AGENTSCUP_HANDLE = "agentscup";
+const AGENTSCUP_PROFILE = `https://x.com/${AGENTSCUP_HANDLE}`;
 
 interface Props {
   handle: string;
@@ -44,27 +39,43 @@ interface TaskDef {
 
 const TASKS: TaskDef[] = [
   {
-    key: "notificationsOn",
-    title: "Turn on @agentscup notifications",
-    subtitle: "Tap the bell on our profile — don't miss launch day.",
-    intent: AGENTSCUP_PROFILE,
+    key: "follow",
+    title: "Follow @agentscup",
+    subtitle: "Tap follow on our profile.",
+    intent: `https://twitter.com/intent/follow?screen_name=${AGENTSCUP_HANDLE}`,
     accent: "#b068ff",
   },
   {
-    key: "likePinned",
-    title: "Like our pinned post",
+    key: "like",
+    title: "Like the launch post",
     subtitle: "One tap on the heart.",
-    intent: pinnedIntent("like"),
+    // Intent URL opens the native X "like" dialog for the specific
+    // tweet id; falls back to the tweet URL if X ignores the intent
+    // param on mobile.
+    intent: `https://twitter.com/intent/like?tweet_id=${LAUNCH_TWEET_ID}`,
     accent: "#FF3B8A",
   },
   {
-    key: "replyPinned",
-    title: "Reply to our pinned post",
+    key: "retweet",
+    title: "Retweet the launch post",
+    subtitle: "Boost the signal.",
+    intent: `https://twitter.com/intent/retweet?tweet_id=${LAUNCH_TWEET_ID}`,
+    accent: "#00AEEF",
+  },
+  {
+    key: "reply",
+    title: "Share — reply to the launch post",
     subtitle: "Drop an emoji. Any emoji.",
-    intent: pinnedIntent("reply"),
+    intent: `https://twitter.com/intent/tweet?in_reply_to=${LAUNCH_TWEET_ID}`,
     accent: "#FFD700",
   },
 ];
+
+// Kept to avoid unused-binding lint under the new task layout; the
+// profile URL is still referenced by the follow fallback path in a
+// future iteration.
+void AGENTSCUP_PROFILE;
+void LAUNCH_TWEET_URL;
 
 /**
  * Shows the four signal-boosting tasks plus a live rarity meter that

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect, useCallback } from "react";
-import { useWallet } from "@solana/wallet-adapter-react";
+import { useAccount } from "wagmi";
 import { Agent, Formation, Position } from "@/types";
 import { calculateChemistry } from "@/lib/utils";
 import { getUser, updateTeamName, getSquads, createSquad, updateSquad } from "@/lib/api";
@@ -27,13 +27,19 @@ function compatiblePositions(slotPosition: Position): Position[] {
 }
 
 export default function SquadPage() {
-  const { publicKey } = useWallet();
+  const { address } = useAccount();
   const [ownedAgents, setOwnedAgents] = useState<Agent[]>([]);
   const [loading, setLoading] = useState(false);
   const [formation, setFormation] = useState<Formation>("4-3-3");
   const [positions, setPositions] = useState<Record<string, Agent | null>>({});
   const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
-  const [squadName, setSquadName] = useState("MY SQUAD");
+  // Empty while loading — filled from the backend leaderboard row on
+  // first paint. Every wallet gets a random team name assigned at
+  // /api/users/connect ("Neon Wolves 42"-style) so the user sees
+  // their real name pre-filled instead of the old "MY SQUAD"
+  // placeholder. The input stays editable; saving still writes
+  // whatever the user typed.
+  const [squadName, setSquadName] = useState("");
   const [manager, setManager] = useState<Agent | null>(null);
   const [showManagerPicker, setShowManagerPicker] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -42,25 +48,39 @@ export default function SquadPage() {
 
   // Load owned agents + saved squad
   useEffect(() => {
-    if (!publicKey) {
+    if (!address) {
       setOwnedAgents([]);
       return;
     }
-    const wallet = publicKey.toBase58();
+    const wallet = address.toLowerCase();
     setLoading(true);
 
     Promise.all([getUser(wallet), getSquads(wallet)])
       .then(([userData, squadsData]: [unknown, unknown]) => {
-        const user = userData as { agents?: DbUserAgent[] };
+        const user = userData as {
+          agents?: DbUserAgent[];
+          standing?: { team_name?: string | null } | null;
+          username?: string | null;
+        };
         const agents = mapUserAgents(user.agents || []);
         setOwnedAgents(agents);
+
+        // Team name defaults to the wallet-slice form ("0x5A31…6568")
+        // the backend seeds at /api/users/connect. If the leaderboard
+        // row is somehow missing we synthesise the same format
+        // client-side so the input never renders empty.
+        const walletSlice = `${wallet.slice(0, 6)}…${wallet.slice(-4)}`;
+        const backendTeamName =
+          user.standing?.team_name?.trim() ||
+          user.username?.trim() ||
+          walletSlice;
 
         // Load first saved squad if exists
         const squads = squadsData as { id: string; name: string; formation: string; positions: Record<string, string>; manager_id: string | null }[];
         if (squads && squads.length > 0) {
           const saved = squads[0];
           setSquadId(saved.id);
-          setSquadName(saved.name || "MY SQUAD");
+          setSquadName(saved.name?.trim() || backendTeamName);
           if (saved.formation) setFormation(saved.formation as Formation);
 
           // Rebuild positions — map agent IDs back to Agent objects
@@ -79,11 +99,16 @@ export default function SquadPage() {
             const mgr = agents.find(a => a.id === saved.manager_id);
             if (mgr) setManager(mgr);
           }
+        } else {
+          // No saved squad yet — surface the backend-assigned random
+          // team name in the input so first-time users don't see an
+          // empty field.
+          setSquadName(backendTeamName);
         }
       })
       .catch(() => setOwnedAgents([]))
       .finally(() => setLoading(false));
-  }, [publicKey]);
+  }, [address]);
 
   const managers = ownedAgents.filter((a) => a.position === "MGR");
   const playableAgents = ownedAgents.filter((a) => a.position !== "MGR");
@@ -148,7 +173,7 @@ export default function SquadPage() {
   }
 
   const handleSave = useCallback(async () => {
-    if (!publicKey || !squadName.trim()) return;
+    if (!address || !squadName.trim()) return;
     setSaving(true);
     setSaveMsg(null);
 
@@ -159,7 +184,7 @@ export default function SquadPage() {
     }
 
     try {
-      const wallet = publicKey.toBase58();
+      const wallet = address.toLowerCase();
 
       // Save squad (create or update)
       if (squadId) {
@@ -192,9 +217,9 @@ export default function SquadPage() {
     } finally {
       setSaving(false);
     }
-  }, [publicKey, squadName, positions, formation, manager, chemistry, squadId]);
+  }, [address, squadName, positions, formation, manager, chemistry, squadId]);
 
-  if (!publicKey) {
+  if (!address) {
     return (
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
         <div className="mb-6">

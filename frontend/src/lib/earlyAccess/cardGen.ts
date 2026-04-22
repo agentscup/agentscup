@@ -126,12 +126,52 @@ export function computeRarityScore(s: XSignals): {
   return { score, breakdown };
 }
 
+/**
+ * X-signal score → rarity tier. Score is follower-weighted so this
+ * is the proportional-to-followers lookup players expect: 10k+
+ * account reaches LEGENDARY floor, 2k+ reaches EPIC floor, etc.
+ * Thresholds calibrated so the lowest qualifier in each tier is
+ * someone who crosses the follower milestone with no other bonuses.
+ */
 export function scoreToRarity(score: number): Rarity {
-  if (score >= 90) return "LEGENDARY";
-  if (score >= 60) return "EPIC";
-  if (score >= 30) return "RARE";
+  if (score >= 95) return "LEGENDARY"; //   10k+ followers + bonus, or 20k+
+  if (score >= 65) return "EPIC";      //    2k+ followers + bonus
+  if (score >= 35) return "RARE";      //    1k+ followers + bonus
   return "COMMON";
 }
+
+/**
+ * Same tier lookup but keyed on the visible overall rating. Kept in
+ * sync with `scoreToRarity` by design — because RARITY_FLOOR/CEIL
+ * below are non-overlapping, `overallToRarity(overall)` always
+ * equals `scoreToRarity(score)` for any card produced by
+ * `generateCard`. Used on the display path so stale DB rows with a
+ * drifted rarity column still render a coherent "82 OVR / LEGENDARY"
+ * pill.
+ */
+export function overallToRarity(overall: number): Rarity {
+  if (overall >= 82) return "LEGENDARY";
+  if (overall >= 74) return "EPIC";
+  if (overall >= 65) return "RARE";
+  return "COMMON";
+}
+
+/** Score ranges per tier — used to pick a card's position WITHIN
+ *  its tier so a score-95 LEGENDARY sits near the floor (82) and a
+ *  score-125 whale sits near the ceil (92). Keeps OVR correlated
+ *  with follower strength inside the same rarity. */
+const RARITY_SCORE_FLOOR: Record<Rarity, number> = {
+  COMMON: 0,
+  RARE: 35,
+  EPIC: 65,
+  LEGENDARY: 95,
+};
+const RARITY_SCORE_CEIL: Record<Rarity, number> = {
+  COMMON: 34,
+  RARE: 64,
+  EPIC: 94,
+  LEGENDARY: 130, // == MAX_RARITY_SCORE
+};
 
 // ─────────────────────────────────────────────────────────────────────
 // Position + stats
@@ -156,19 +196,30 @@ const POSITION_WEIGHTS: Record<Position, FounderStats> = {
   ST:  { pace: 1.3, shooting: 1.7, passing: 0.9, dribbling: 1.3, defending: 0.3, physical: 1.1 },
 };
 
-/** Base floor stats per rarity — legendaries never roll bad. */
+/** Base OVR floor + ceil per rarity. Non-overlapping by design:
+ *
+ *    COMMON    55 – 64     (smallacct / new accounts)
+ *    RARE      65 – 73     (1k+ followers)
+ *    EPIC      74 – 81     (2k+ followers, or 1k + bio)
+ *    LEGENDARY 82 – 92     (10k+ followers / whales)
+ *
+ *  The `rollStat` helper below picks a base in [floor, ceil] weighted
+ *  by where the user sits inside their tier's score range — so a
+ *  just-qualified LEGENDARY (score 95) lands near 82, a whale
+ *  (score 125) lands near 92. Keeps OVR monotonic with followers
+ *  even within the same rarity tier. */
 const RARITY_FLOOR: Record<Rarity, number> = {
   COMMON: 55,
   RARE: 65,
-  EPIC: 75,
-  LEGENDARY: 85,
+  EPIC: 74,
+  LEGENDARY: 82,
 };
 
 const RARITY_CEIL: Record<Rarity, number> = {
-  COMMON: 74,
-  RARE: 82,
-  EPIC: 89,
-  LEGENDARY: 96,
+  COMMON: 64,
+  RARE: 73,
+  EPIC: 81,
+  LEGENDARY: 92,
 };
 
 export function generateCard(signals: XSignals): FounderCard {
@@ -178,23 +229,38 @@ export function generateCard(signals: XSignals): FounderCard {
   const { score, breakdown } = computeRarityScore({ ...signals, handle });
   const rarity = scoreToRarity(score);
 
+  // Tier progress = how deep the user's score sits inside their
+  // rarity's score band (0 = just qualified, 1 = near next tier).
+  // Used below to bias stat base values up/down so a whale at the
+  // ceiling of LEGENDARY lands near OVR 92 while someone who just
+  // crossed the LEGENDARY floor lands near 82.
+  const scoreFloor = RARITY_SCORE_FLOOR[rarity];
+  const scoreCeil = RARITY_SCORE_CEIL[rarity];
+  const scoreSpan = Math.max(1, scoreCeil - scoreFloor);
+  const tierProgress = Math.max(
+    0,
+    Math.min(1, (score - scoreFloor) / scoreSpan)
+  );
+
   // Pick position from a hash of the handle — stable across re-rolls.
   const positionIdx = hashToInt(`pos:${handle}`) % POSITIONS.length;
   const position = POSITIONS[positionIdx];
 
-  // Six per-stat deterministic rolls in [floor, ceil], then tilt toward
-  // position weights so the card has a clear identity.
+  // Six per-stat deterministic rolls in [floor, ceil], biased toward
+  // the top of the band when tierProgress is high. Position weights
+  // then tilt individual stats — the weighted average (OVR) stays
+  // inside the rarity's OVR range thanks to the ceil clamp.
   const floor = RARITY_FLOOR[rarity];
   const ceil = RARITY_CEIL[rarity];
   const weights = POSITION_WEIGHTS[position];
 
   const raw: FounderStats = {
-    pace:      rollStat(handle, "pace",      floor, ceil, weights.pace),
-    shooting:  rollStat(handle, "shooting",  floor, ceil, weights.shooting),
-    passing:   rollStat(handle, "passing",   floor, ceil, weights.passing),
-    dribbling: rollStat(handle, "dribbling", floor, ceil, weights.dribbling),
-    defending: rollStat(handle, "defending", floor, ceil, weights.defending),
-    physical:  rollStat(handle, "physical",  floor, ceil, weights.physical),
+    pace:      rollStat(handle, "pace",      floor, ceil, weights.pace,      tierProgress),
+    shooting:  rollStat(handle, "shooting",  floor, ceil, weights.shooting,  tierProgress),
+    passing:   rollStat(handle, "passing",   floor, ceil, weights.passing,   tierProgress),
+    dribbling: rollStat(handle, "dribbling", floor, ceil, weights.dribbling, tierProgress),
+    defending: rollStat(handle, "defending", floor, ceil, weights.defending, tierProgress),
+    physical:  rollStat(handle, "physical",  floor, ceil, weights.physical,  tierProgress),
   };
 
   const overall = computeOverall(raw, position);
@@ -216,14 +282,30 @@ export function generateCard(signals: XSignals): FounderCard {
 // Helpers
 // ─────────────────────────────────────────────────────────────────────
 
-function rollStat(handle: string, key: string, floor: number, ceil: number, weight: number): number {
+function rollStat(
+  handle: string,
+  key: string,
+  floor: number,
+  ceil: number,
+  weight: number,
+  tierProgress: number
+): number {
   const h = hashToInt(`${key}:${handle}`);
   const range = ceil - floor;
-  const base = floor + (h % (range + 1));
-  // Weighted tilt: pull the stat toward the ceiling when the position
-  // values it highly, toward the floor when it doesn't.
-  const tilt = Math.round((weight - 1) * 8);
-  return clamp(base + tilt, floor, 99);
+  // Split the rarity's OVR range into a SCORE-driven component (60%)
+  // and a HANDLE-driven component (40%). Higher tierProgress pushes
+  // the base up by a larger share; the handle hash still jiggles
+  // each stat so two users in the exact same score tier don't end
+  // up with identical cards.
+  const scoreShare = Math.round(tierProgress * range * 0.6);
+  const hashSpan = Math.max(1, Math.round(range * 0.4));
+  const base = floor + scoreShare + (h % (hashSpan + 1));
+
+  // Position tilt — pushes key stats up (pace for a winger,
+  // defending for a CB). Clamp to ceil so tilt can't leak a stat
+  // above the tier's OVR band.
+  const tilt = Math.round((weight - 1) * 6);
+  return clamp(base + tilt, floor, ceil);
 }
 
 function computeOverall(s: FounderStats, pos: Position): number {

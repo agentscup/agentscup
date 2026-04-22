@@ -1,14 +1,24 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { useWallet, useConnection } from "@solana/wallet-adapter-react";
+import { useAccount } from "wagmi";
 import { PACK_TYPES } from "@/data/agents";
 import { Agent, PackType } from "@/types";
 import { getRarityColor } from "@/lib/utils";
 import { openPack } from "@/lib/api";
 import { mapDbAgent, type DbAgent } from "@/lib/mapAgent";
-import { sendCupPayment } from "@/lib/solana";
+import { buyPack } from "@/lib/evm";
 import AgentCard from "@/components/cards/AgentCard";
+
+/**
+ * Pack purchase flow on Base:
+ *   1. User clicks BUY → wallet prompts for buyPack() tx with msg.value = priceWei
+ *   2. Tx confirms → we POST /api/packs/open with { walletAddress, packType, txHash }
+ *   3. Backend re-reads the tx receipt, decodes PackPurchased event, rolls cards
+ *
+ * The tx hash is stashed in a ref so a failed API call (network blip, rate
+ * limit, etc.) can be retried without forcing the user to re-sign.
+ */
 
 function PackCard({ pack, onBuy, disabled }: { pack: PackType; onBuy: () => void; disabled: boolean }) {
   const tierStyles: Record<string, { border: string; glow: string; accent: string }> = {
@@ -65,35 +75,35 @@ function PackCard({ pack, onBuy, disabled }: { pack: PackType; onBuy: () => void
         disabled={disabled}
         className="pixel-btn w-full text-[8px] disabled:opacity-40 disabled:cursor-not-allowed"
       >
-        {pack.priceCup.toLocaleString()} $CUP
+        {pack.priceEth} ETH
       </button>
     </div>
   );
 }
 
 export default function PacksPage() {
-  const { publicKey, signTransaction } = useWallet();
-  const { connection } = useConnection();
+  const { address } = useAccount();
   const [openedCards, setOpenedCards] = useState<Agent[]>([]);
   const [revealIndex, setRevealIndex] = useState(-1);
   const [isOpening, setIsOpening] = useState(false);
   const [buying, setBuying] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Store pending tx for retry — if $CUP was sent but API call failed
-  const pendingTx = useRef<{ txSignature: string; packType: string } | null>(null);
+  /** Holds the tx hash of a confirmed buyPack() when the subsequent
+   *  /api/packs/open call failed. Lets the user retry the server
+   *  roll without re-paying. */
+  const pendingTx = useRef<{ txHash: string; packType: string } | null>(null);
 
-  async function claimPack(txSignature: string, packType: string) {
-    if (!publicKey) return;
+  async function claimPack(txHash: string, packType: string) {
+    if (!address) return;
 
-    const result = await openPack(publicKey.toBase58(), packType, txSignature);
+    const result = await openPack(address.toLowerCase(), packType, txHash);
     const resultData = result as { cards: Array<{ agents: unknown }>; already_processed?: boolean };
 
     const cards = resultData.cards
       .filter((c) => c.agents)
       .map((c) => mapDbAgent(c.agents as DbAgent));
 
-    // Clear pending tx — pack was successfully claimed
     pendingTx.current = null;
 
     setOpenedCards(cards);
@@ -109,47 +119,41 @@ export default function PacksPage() {
   }
 
   async function handleBuy(pack: PackType) {
-    if (!publicKey || !signTransaction) return;
+    if (!address) return;
     setError(null);
     setBuying(true);
 
     try {
-      // If there's a pending tx from a previous failed attempt, retry that first
+      // Retry path — previous buy confirmed on-chain but API call failed
       if (pendingTx.current && pendingTx.current.packType === pack.id) {
-        await claimPack(pendingTx.current.txSignature, pack.id);
+        await claimPack(pendingTx.current.txHash, pack.id);
         setBuying(false);
         return;
       }
 
-      // Step 1: Send $CUP payment to treasury
-      const txSignature = await sendCupPayment(
-        connection,
-        publicKey,
-        signTransaction,
-        pack.priceCup
-      );
+      // Fresh purchase: send on-chain tx, then claim cards server-side
+      const priceWei = BigInt(pack.priceWei);
+      const { txHash } = await buyPack(pack.tier, priceWei);
 
-      // $CUP is sent — store tx in case the API call fails
-      pendingTx.current = { txSignature, packType: pack.id };
+      // Stash tx hash so a server-side failure can be retried without re-paying
+      pendingTx.current = { txHash, packType: pack.id };
 
-      // Step 2: Claim pack from backend (idempotent — safe to retry)
-      await claimPack(txSignature, pack.id);
+      await claimPack(txHash, pack.id);
     } catch (err: unknown) {
       let msg = err instanceof Error ? err.message : "Failed to open pack";
 
-      // Detect insufficient $CUP balance
-      if (
-        msg.toLowerCase().includes("insufficient") ||
-        msg.includes("0x1") ||
-        msg.includes("TokenAccount") ||
-        msg.includes("debit an account")
-      ) {
-        msg = `Insufficient $CUP balance. You need at least ${pack.priceCup.toLocaleString()} $CUP to buy this pack.`;
+      // Friendlier errors for common wallet / chain issues
+      const lc = msg.toLowerCase();
+      if (lc.includes("insufficient funds") || lc.includes("exceeds the balance")) {
+        msg = `Insufficient ETH balance. You need ${pack.priceEth} ETH (plus a little for gas) to buy this pack.`;
+      } else if (lc.includes("user rejected") || lc.includes("user denied")) {
+        msg = "Transaction rejected in wallet.";
+      } else if (lc.includes("chain") && lc.includes("mismatch")) {
+        msg = "Wrong network — switch your wallet to Base.";
       }
 
       if (pendingTx.current) {
-        // $CUP was sent but API failed — show retry option
-        setError(`${msg}. Your payment was sent. Click the button again to claim your pack.`);
+        setError(`${msg}. Your payment went through on-chain — click the button again to claim your cards.`);
       } else {
         setError(msg);
       }
@@ -171,7 +175,7 @@ export default function PacksPage() {
           PACK STORE
         </h1>
         <p className="font-pixel text-[7px] text-white/40 tracking-wider">
-          {publicKey ? "OPEN PACKS TO DISCOVER NEW AGENTS" : "CONNECT YOUR WALLET TO BUY PACKS"}
+          {address ? "OPEN PACKS TO DISCOVER NEW AGENTS" : "CONNECT YOUR WALLET TO BUY PACKS"}
         </p>
       </div>
 
@@ -190,7 +194,7 @@ export default function PacksPage() {
             key={pack.id}
             pack={pack}
             onBuy={() => handleBuy(pack)}
-            disabled={!publicKey || buying}
+            disabled={!address || buying}
           />
         ))}
       </div>
@@ -198,7 +202,7 @@ export default function PacksPage() {
       {buying && (
         <div className="text-center mt-6">
           <div className="font-pixel text-[8px] text-white/60 tracking-wider animate-pulse">
-            {pendingTx.current ? "CLAIMING YOUR PACK..." : "PROCESSING TRANSACTION..."}
+            {pendingTx.current ? "CLAIMING YOUR PACK..." : "CONFIRM IN WALLET..."}
           </div>
         </div>
       )}

@@ -2,12 +2,19 @@ import { Server, Socket } from "socket.io";
 import { supabase } from "../lib/supabase";
 import { simulateMatch, SquadInput, PlayerInput, MatchEvent, MatchResult } from "../engine/matchEngine";
 import { calculateElo } from "../services/eloService";
-import { verifyEntryFeeTransaction, sendPayout, MATCH_ENTRY_FEE_CUP } from "../lib/solana";
+import {
+  verifyMatchEntry,
+  forfeitMatch,
+  transferEth,
+  treasuryAddress,
+  MATCH_ENTRY_FEE_WEI,
+  isEvmAddress,
+} from "../lib/evm";
 
 /* ================================================================== */
 /*  Online PvP Matchmaking + Real-time Match Streaming                 */
-/*  Economy: $CUP token (Token-2022)                                   */
-/*  Entry: 100,000 $CUP each · Winner gets: 200,000 $CUP               */
+/*  Economy: native ETH on Base                                        */
+/*  Entry: 0.001 ETH each · Winner takes: 0.002 ETH                    */
 /* ================================================================== */
 
 interface QueueEntry {
@@ -17,7 +24,12 @@ interface QueueEntry {
   teamName: string;
   userId: string;
   joinedAt: number;
-  txSignature: string;
+  /** Hex txHash of the player's AgentsCupMatchEscrow.depositEntry call. */
+  txHash: string;
+  /** bytes32 matchId the player used when calling depositEntry. Every
+   *  player picks a fresh random id per queue attempt, so two paired
+   *  players hold two independent on-chain escrow buckets. */
+  escrowMatchId: string;
 }
 
 interface ActiveMatch {
@@ -32,6 +44,11 @@ interface ActiveMatch {
   awayTeamName: string;
   homeSquad: SquadInput;
   awaySquad: SquadInput;
+  /** On-chain escrow matchIds (bytes32 hex). `awayEscrowMatchId` is
+   *  `null` for bot matches — the bot's half of the prize pot comes
+   *  from the treasury wallet directly. */
+  homeEscrowMatchId: string;
+  awayEscrowMatchId: string | null;
   result: MatchResult;
   seed: number;
   currentMinute: number;
@@ -39,6 +56,11 @@ interface ActiveMatch {
   interval?: ReturnType<typeof setInterval>;
   isBotMatch?: boolean;
 }
+
+/** Bigint-bounded ETH entry fee expressed as a human-readable
+ *  number for legacy/socket payloads that want JS-safe numeric
+ *  values. 0.001 ETH = 1_000_000_000_000_000 wei. */
+const MATCH_ENTRY_FEE_WEI_STR = MATCH_ENTRY_FEE_WEI.toString();
 
 // In-memory state
 const matchmakingQueue = new Map<string, QueueEntry>();     // wallet → entry
@@ -49,8 +71,17 @@ const walletToMatch = new Map<string, string>();             // wallet → match
 const usedTxSignatures = new Set<string>();                  // prevent TX reuse
 const botFallbackTimers = new Map<string, ReturnType<typeof setTimeout>>(); // wallet → bot match timer
 
-// Wait this long for a real opponent before falling back to a bot match
-const BOT_FALLBACK_MS = 20_000;
+// Wait this long for a real opponent before falling back to a bot
+// match. Sampled per-queue-entry from a 30-40 s window so two
+// players arriving back-to-back don't fall through to bots at the
+// same instant — gives real-opponent matching a slightly wider
+// runway while keeping the max queue time under a minute.
+const BOT_FALLBACK_MIN_MS = 30_000;
+const BOT_FALLBACK_MAX_MS = 40_000;
+function randomBotFallbackMs(): number {
+  const span = BOT_FALLBACK_MAX_MS - BOT_FALLBACK_MIN_MS;
+  return BOT_FALLBACK_MIN_MS + Math.floor(Math.random() * (span + 1));
+}
 
 // Bot match outcome distribution
 const BOT_WIN_CHANCE = 0.45;   // player wins
@@ -67,67 +98,112 @@ export function setupMatchSocket(io: Server) {
       formation: string;
       positions: Record<string, string>; // slot → agentId
       managerId?: string;
-      txSignature: string;
+      /** Hex tx hash of the player's depositEntry() call. */
+      txHash: string;
+      /** bytes32 matchId used in that deposit. */
+      escrowMatchId: string;
     }) => {
       try {
-        const { wallet, formation, positions, managerId, txSignature } = data;
+        const { wallet, formation, positions, managerId, txHash, escrowMatchId } = data;
         if (!wallet || !formation || !positions) {
           socket.emit("queue_error", { message: "Missing wallet, formation, or positions" });
           return;
         }
+        if (!isEvmAddress(wallet)) {
+          socket.emit("queue_error", { message: "Wallet must be a 0x-prefixed EVM address" });
+          return;
+        }
+        const walletLower = wallet.toLowerCase();
 
         // Already in queue or match?
-        if (matchmakingQueue.has(wallet)) {
+        if (matchmakingQueue.has(walletLower)) {
           socket.emit("queue_error", { message: "Already in queue" });
           return;
         }
-        if (walletToMatch.has(wallet)) {
+        if (walletToMatch.has(walletLower)) {
           socket.emit("queue_error", { message: "Already in a match" });
           return;
         }
 
-        if (!txSignature) {
-          socket.emit("queue_error", { message: "Entry fee payment required" });
+        if (!txHash || !escrowMatchId) {
+          socket.emit("queue_error", { message: "Entry fee deposit required" });
+          return;
+        }
+        if (!/^0x[a-fA-F0-9]{64}$/.test(txHash)) {
+          socket.emit("queue_error", { message: "txHash must be a 0x-prefixed keccak hash" });
+          return;
+        }
+        if (!/^0x[a-fA-F0-9]{64}$/.test(escrowMatchId)) {
+          socket.emit("queue_error", { message: "escrowMatchId must be a bytes32 (0x + 64 hex)" });
           return;
         }
 
-        if (usedTxSignatures.has(txSignature)) {
+        // Dedup against re-submitted tx hashes within this process
+        // lifetime. The on-chain contract also guards against slot
+        // reuse, so this is belt-plus-braces.
+        if (usedTxSignatures.has(txHash.toLowerCase())) {
           socket.emit("queue_error", { message: "Transaction already used" });
           return;
         }
 
-        console.log(`[MATCH] Verifying entry fee for ${wallet.slice(0, 8)} tx=${txSignature.slice(0, 12)}`);
-        const verification = await verifyEntryFeeTransaction(txSignature, wallet);
+        console.log(
+          `[MATCH] Verifying entry deposit for ${walletLower.slice(0, 10)} tx=${txHash.slice(0, 12)}`
+        );
+        const verification = await verifyMatchEntry(
+          txHash,
+          walletLower,
+          escrowMatchId.toLowerCase(),
+          0,
+          MATCH_ENTRY_FEE_WEI
+        );
         if (!verification.valid) {
-          console.log(`[MATCH] Entry fee verification failed: ${verification.error}`);
-          socket.emit("queue_error", { message: `Payment verification failed: ${verification.error}` });
+          console.log(`[MATCH] Deposit verification failed: ${verification.reason}`);
+          socket.emit("queue_error", {
+            message: `Payment verification failed: ${verification.reason}`,
+          });
           return;
         }
 
-        usedTxSignatures.add(txSignature);
+        usedTxSignatures.add(txHash.toLowerCase());
 
         // Track socket ↔ wallet mapping
-        walletToSocket.set(wallet, socket.id);
-        socketToWallet.set(socket.id, wallet);
+        walletToSocket.set(walletLower, socket.id);
+        socketToWallet.set(socket.id, walletLower);
 
-        // Fetch user
+        // Fetch user keyed on the EVM address. `wallet_address` is the
+        // chain-agnostic column; new Base users write their 0x address
+        // into it directly. Legacy Solana rows stay unreachable from
+        // this path (their address format won't match).
         const { data: user } = await supabase
           .from("users")
           .select("id, username")
-          .eq("wallet_address", wallet)
-          .single();
+          .eq("wallet_address", walletLower)
+          .maybeSingle();
 
         if (!user) {
           socket.emit("queue_error", { message: "User not found. Connect your wallet first." });
-          sendPayout(wallet, MATCH_ENTRY_FEE_CUP).catch(e => console.error("[MATCH] Refund failed:", e));
+          // Refund by draining their escrow slot back to them.
+          forfeitMatch(escrowMatchId.toLowerCase(), walletLower).catch((e) =>
+            console.error("[MATCH] Refund failed:", e)
+          );
           return;
         }
 
         // Build & verify squad from DB
-        const squad = await buildVerifiedSquad(wallet, user.id, formation, positions, managerId);
+        const squad = await buildVerifiedSquad(
+          walletLower,
+          user.id,
+          formation,
+          positions,
+          managerId
+        );
         if (!squad) {
-          socket.emit("queue_error", { message: "Invalid squad. Make sure you own all agents." });
-          sendPayout(wallet, MATCH_ENTRY_FEE_CUP).catch(e => console.error("[MATCH] Refund failed:", e));
+          socket.emit("queue_error", {
+            message: "Invalid squad. Make sure you own all agents.",
+          });
+          forfeitMatch(escrowMatchId.toLowerCase(), walletLower).catch((e) =>
+            console.error("[MATCH] Refund failed:", e)
+          );
           return;
         }
 
@@ -139,25 +215,36 @@ export function setupMatchSocket(io: Server) {
           .single();
 
         const entry: QueueEntry = {
-          wallet,
+          wallet: walletLower,
           socketId: socket.id,
           squad,
-          teamName: lb?.team_name || user.username || wallet.slice(0, 8),
+          // Fallback chain mirrors the squad page: stored team
+          // name → username → wallet slice ("0x5a31…6568"). New
+          // players always have `lb.team_name` seeded by
+          // /api/users/connect, so the tail cases are only relevant
+          // for pre-migration rows or edge failures.
+          teamName:
+            lb?.team_name ||
+            user.username ||
+            `${walletLower.slice(0, 6)}…${walletLower.slice(-4)}`,
           userId: user.id,
           joinedAt: Date.now(),
-          txSignature,
+          txHash: txHash.toLowerCase(),
+          escrowMatchId: escrowMatchId.toLowerCase(),
         };
 
-        matchmakingQueue.set(wallet, entry);
+        matchmakingQueue.set(walletLower, entry);
         socket.emit("queue_joined", { position: matchmakingQueue.size });
-        console.log(`[MATCH] ${wallet.slice(0, 8)} joined queue (${matchmakingQueue.size} in queue) [PAID ${MATCH_ENTRY_FEE_CUP} $CUP]`);
+        console.log(
+          `[MATCH] ${walletLower.slice(0, 10)} joined queue (${matchmakingQueue.size} in queue) [paid 0.001 ETH]`
+        );
 
         // Try to find a match
         tryMatchPlayers(io);
 
         // If still in queue (no opponent yet), schedule bot fallback
-        if (matchmakingQueue.has(wallet)) {
-          scheduleBotFallback(io, wallet);
+        if (matchmakingQueue.has(walletLower)) {
+          scheduleBotFallback(io, walletLower);
         }
       } catch (err) {
         console.error("[MATCH] join_queue error:", err);
@@ -169,12 +256,13 @@ export function setupMatchSocket(io: Server) {
     socket.on("leave_queue", async () => {
       const wallet = socketToWallet.get(socket.id);
       if (wallet && matchmakingQueue.has(wallet)) {
+        const entry = matchmakingQueue.get(wallet)!;
         matchmakingQueue.delete(wallet);
         cancelBotFallback(wallet);
 
-        // Refund entry fee in $CUP
-        console.log(`[MATCH] ${wallet.slice(0, 8)} left queue — refunding ${MATCH_ENTRY_FEE_CUP} $CUP`);
-        const refund = await sendPayout(wallet, MATCH_ENTRY_FEE_CUP);
+        // Refund the player's own escrow deposit back to them.
+        console.log(`[MATCH] ${wallet.slice(0, 10)} left queue — refunding escrow`);
+        const refund = await forfeitMatch(entry.escrowMatchId, wallet);
         if (!refund.success) {
           console.error(`[MATCH] REFUND FAILED for ${wallet}: ${refund.error}`);
         }
@@ -189,12 +277,15 @@ export function setupMatchSocket(io: Server) {
       if (wallet) {
         // Refund if was in queue (not yet matched)
         if (matchmakingQueue.has(wallet)) {
+          const entry = matchmakingQueue.get(wallet)!;
           matchmakingQueue.delete(wallet);
           cancelBotFallback(wallet);
-          console.log(`[MATCH] ${wallet.slice(0, 8)} disconnected from queue — refunding`);
-          const refund = await sendPayout(wallet, MATCH_ENTRY_FEE_CUP);
+          console.log(`[MATCH] ${wallet.slice(0, 10)} disconnected from queue — refunding escrow`);
+          const refund = await forfeitMatch(entry.escrowMatchId, wallet);
           if (!refund.success) {
-            console.error(`[MATCH] DISCONNECT REFUND FAILED for ${wallet}: ${refund.error}`);
+            console.error(
+              `[MATCH] DISCONNECT REFUND FAILED for ${wallet}: ${refund.error}`
+            );
           }
         }
 
@@ -311,6 +402,8 @@ async function startMatch(io: Server, home: QueueEntry, away: QueueEntry) {
     awayTeamName: away.teamName,
     homeSquad: home.squad,
     awaySquad: away.squad,
+    homeEscrowMatchId: home.escrowMatchId,
+    awayEscrowMatchId: away.escrowMatchId,
     result,
     seed,
     currentMinute: 0,
@@ -467,41 +560,78 @@ async function finishMatch(io: Server, match: ActiveMatch) {
       await supabase.from("users").update({ xp: (awayUser.xp || 0) + awayXp }).eq("id", match.awayUserId);
     }
 
-    // ─── Prize Payout ($CUP) ──────────────────────────────────
-    //   Draw: refund both players their entry (100k $CUP each)
-    //   Win:  winner gets full prize pot (200k $CUP)
+    // ─── Prize Payout (native ETH via MatchEscrow) ────────────
+    //   Draw: each player's own escrow slot is refunded to them.
+    //   Win:  the winner drains BOTH escrow matchIds back to
+    //         themselves, collecting the combined 0.002 ETH pot.
+    //
+    // We call forfeitAll() twice per settlement — once per escrow
+    // matchId. It's a contract method we hold OPERATOR_ROLE on,
+    // which cleanly drains whatever's funded in a slot to any
+    // beneficiary. Base gas on two forfeitAll txs is pennies.
     const isDraw = result.homeScore === result.awayScore;
     const homeWon = result.homeScore > result.awayScore;
-    const prizePot = MATCH_ENTRY_FEE_CUP * 2;
+    const ENTRY_WEI = MATCH_ENTRY_FEE_WEI;
+    const PRIZE_POT_WEI = ENTRY_WEI * 2n;
     let payoutTx: string | undefined;
-    let homePrizeCup = 0;
-    let awayPrizeCup = 0;
+    let homePrizeWei = 0n;
+    let awayPrizeWei = 0n;
 
     if (isDraw) {
-      console.log(`[MATCH] Draw — refunding both players ${MATCH_ENTRY_FEE_CUP} $CUP each`);
-      const [homeRefund, awayRefund] = await Promise.allSettled([
-        sendPayout(match.homeWallet, MATCH_ENTRY_FEE_CUP),
-        sendPayout(match.awayWallet, MATCH_ENTRY_FEE_CUP),
-      ]);
-      if (homeRefund.status === "fulfilled" && !homeRefund.value.success) {
-        console.error(`[MATCH] HOME REFUND FAILED: ${homeRefund.value.error}`);
+      console.log(`[MATCH] Draw — refunding both players their escrow slots`);
+      // Both refunds are signed by the treasury EOA so they share
+      // one nonce stream — run sequentially. Running in parallel
+      // causes the second tx to race the first with the same nonce
+      // and hit "replacement transaction underpriced".
+      const homeRefund = await forfeitMatch(
+        match.homeEscrowMatchId,
+        match.homeWallet
+      );
+      if (!homeRefund.success) {
+        console.error(`[MATCH] HOME REFUND FAILED: ${homeRefund.error}`);
       }
-      if (awayRefund.status === "fulfilled" && !awayRefund.value.success) {
-        console.error(`[MATCH] AWAY REFUND FAILED: ${awayRefund.value.error}`);
+      if (match.awayEscrowMatchId) {
+        const awayRefund = await forfeitMatch(
+          match.awayEscrowMatchId,
+          match.awayWallet
+        );
+        if (!awayRefund.success) {
+          console.error(`[MATCH] AWAY REFUND FAILED: ${awayRefund.error}`);
+        }
       }
-      homePrizeCup = MATCH_ENTRY_FEE_CUP;
-      awayPrizeCup = MATCH_ENTRY_FEE_CUP;
+      homePrizeWei = ENTRY_WEI;
+      awayPrizeWei = ENTRY_WEI;
     } else {
       const winnerWallet = homeWon ? match.homeWallet : match.awayWallet;
-      console.log(`[MATCH] Paying winner ${winnerWallet.slice(0, 8)} → ${prizePot} $CUP`);
-      const payout = await sendPayout(winnerWallet, prizePot);
-      if (payout.success) {
-        payoutTx = payout.signature;
-        if (homeWon) homePrizeCup = prizePot;
-        else awayPrizeCup = prizePot;
+      console.log(
+        `[MATCH] Paying winner ${winnerWallet.slice(0, 10)} → 0.002 ETH (2 escrow drains)`
+      );
+      // Drain both escrow buckets to the winner. Sequential for the
+      // same nonce-race reason as the draw branch above. If either
+      // drain fails the next still runs (the try/catch surrounds
+      // the whole settle block so partial success is recorded).
+      const homeDrain = await forfeitMatch(
+        match.homeEscrowMatchId,
+        winnerWallet
+      );
+      if (homeDrain.success) {
+        payoutTx = homeDrain.txHash ?? payoutTx;
       } else {
-        console.error(`[MATCH] PAYOUT FAILED for ${winnerWallet}: ${payout.error}`);
+        console.error(`[MATCH] HOME DRAIN FAILED: ${homeDrain.error}`);
       }
+      if (match.awayEscrowMatchId) {
+        const awayDrain = await forfeitMatch(
+          match.awayEscrowMatchId,
+          winnerWallet
+        );
+        if (awayDrain.success) {
+          payoutTx = awayDrain.txHash ?? payoutTx;
+        } else {
+          console.error(`[MATCH] AWAY DRAIN FAILED: ${awayDrain.error}`);
+        }
+      }
+      if (homeWon) homePrizeWei = PRIZE_POT_WEI;
+      else awayPrizeWei = PRIZE_POT_WEI;
     }
 
     // Notify both players
@@ -510,7 +640,7 @@ async function finishMatch(io: Server, match: ActiveMatch) {
 
     const finishPayload = (side: "home" | "away") => {
       const iWon = (side === "home" && homeWon) || (side === "away" && !homeWon && !isDraw);
-      const myPrizeCup = side === "home" ? homePrizeCup : awayPrizeCup;
+      const myPrizeWei = side === "home" ? homePrizeWei : awayPrizeWei;
       return {
         matchId: match.matchId,
         result: {
@@ -526,9 +656,9 @@ async function finishMatch(io: Server, match: ActiveMatch) {
         xpGain: side === "home"
           ? (result.homeScore > result.awayScore ? 30 : result.homeScore === result.awayScore ? 15 : 5)
           : (result.awayScore > result.homeScore ? 30 : result.homeScore === result.awayScore ? 15 : 5),
-        prizeCup: myPrizeCup,
+        prizeWei: myPrizeWei.toString(),
         payoutTx: iWon ? payoutTx : undefined,
-        entryFeeCup: MATCH_ENTRY_FEE_CUP,
+        entryFeeWei: MATCH_ENTRY_FEE_WEI_STR,
       };
     };
 
@@ -657,13 +787,14 @@ function pickRandom<T>(arr: readonly T[]): T {
 
 function scheduleBotFallback(io: Server, wallet: string) {
   cancelBotFallback(wallet);
+  const delay = randomBotFallbackMs();
   const timer = setTimeout(() => {
     botFallbackTimers.delete(wallet);
     const entry = matchmakingQueue.get(wallet);
     if (!entry) return; // already matched or left queue
     matchmakingQueue.delete(wallet);
     void startBotMatch(io, entry);
-  }, BOT_FALLBACK_MS);
+  }, delay);
   botFallbackTimers.set(wallet, timer);
 }
 
@@ -782,6 +913,8 @@ async function startBotMatch(io: Server, player: QueueEntry) {
     awayTeamName: botTeamName,
     homeSquad: player.squad,
     awaySquad: botSquad,
+    homeEscrowMatchId: player.escrowMatchId,
+    awayEscrowMatchId: null, // no opponent deposit — treasury tops up on win
     result,
     seed,
     currentMinute: 0,
@@ -820,37 +953,68 @@ async function finishBotMatch(io: Server, match: ActiveMatch) {
   const { result } = match;
   const isDraw = result.homeScore === result.awayScore;
   const playerWon = result.homeScore > result.awayScore;
-  const prizePot = MATCH_ENTRY_FEE_CUP * 2;
 
   let payoutTx: string | undefined;
-  let playerPrizeCup = 0;
+  let playerPrizeWei = 0n;
 
   try {
-    // ── Prize / refund ─────────────────────────────────────────
+    // ── Prize / refund (native ETH) ─────────────────────────────
+    // Bot matches have only one real escrow deposit — the player's.
+    // The opposing half of the prize pot comes from the treasury's
+    // operating budget when the player wins.
+    //
+    //   Draw: drain player's escrow back to them (0.001 ETH).
+    //   Win:  drain escrow back + treasury tops up 0.001 ETH
+    //         so total payout is 0.002 ETH.
+    //   Loss: drain escrow to treasury.
     if (isDraw) {
       console.log(
-        `[BOT] Draw — refunding ${match.homeWallet.slice(0, 8)} ${MATCH_ENTRY_FEE_CUP} $CUP`
+        `[BOT] Draw — refunding ${match.homeWallet.slice(0, 10)} 0.001 ETH from escrow`
       );
-      const refund = await sendPayout(match.homeWallet, MATCH_ENTRY_FEE_CUP);
+      const refund = await forfeitMatch(match.homeEscrowMatchId, match.homeWallet);
       if (refund.success) {
-        payoutTx = refund.signature;
-        playerPrizeCup = MATCH_ENTRY_FEE_CUP;
+        payoutTx = refund.txHash;
+        playerPrizeWei = MATCH_ENTRY_FEE_WEI;
       } else {
         console.error(`[BOT] DRAW REFUND FAILED: ${refund.error}`);
       }
     } else if (playerWon) {
       console.log(
-        `[BOT] Player won — paying ${match.homeWallet.slice(0, 8)} ${prizePot} $CUP`
+        `[BOT] Player won — refund escrow + treasury top-up to ${match.homeWallet.slice(0, 10)}`
       );
-      const payout = await sendPayout(match.homeWallet, prizePot);
-      if (payout.success) {
-        payoutTx = payout.signature;
-        playerPrizeCup = prizePot;
+      // SEQUENTIAL, not parallel — both txs are signed by the
+      // treasury EOA so they share a nonce. Running them in parallel
+      // ("replacement transaction underpriced") caused the top-up
+      // leg to drop, leaving winners with only their 0.001 ETH
+      // refund and no real prize.
+      const refund = await forfeitMatch(match.homeEscrowMatchId, match.homeWallet);
+      if (refund.success) {
+        payoutTx = refund.txHash;
+        playerPrizeWei += MATCH_ENTRY_FEE_WEI;
       } else {
-        console.error(`[BOT] PAYOUT FAILED: ${payout.error}`);
+        console.error(`[BOT] WIN REFUND FAILED: ${refund.error}`);
+      }
+
+      const topUp = await transferEth(match.homeWallet, MATCH_ENTRY_FEE_WEI);
+      if (topUp.success) {
+        payoutTx = topUp.txHash ?? payoutTx;
+        playerPrizeWei += MATCH_ENTRY_FEE_WEI;
+      } else {
+        console.error(`[BOT] WIN TOP-UP FAILED: ${topUp.error}`);
       }
     } else {
-      console.log(`[BOT] Player lost — no payout`);
+      console.log(`[BOT] Player lost — draining escrow to treasury`);
+      const treasury = treasuryAddress();
+      if (treasury) {
+        const drain = await forfeitMatch(match.homeEscrowMatchId, treasury);
+        if (!drain.success) {
+          console.error(`[BOT] LOSS DRAIN FAILED: ${drain.error}`);
+        }
+      } else {
+        console.warn(
+          "[BOT] Loss drain skipped — no treasury address configured"
+        );
+      }
     }
 
     // ── ELO + XP ──────────────────────────────────────────────
@@ -893,13 +1057,13 @@ async function finishBotMatch(io: Server, match: ActiveMatch) {
       pointsEarned,
       eloChange,
       xpGain,
-      prizeCup: playerPrizeCup,
+      prizeWei: playerPrizeWei.toString(),
       payoutTx,
-      entryFeeCup: MATCH_ENTRY_FEE_CUP,
+      entryFeeWei: MATCH_ENTRY_FEE_WEI_STR,
     });
 
     console.log(
-      `[BOT] Match finished: ${result.homeScore}-${result.awayScore} prize=${playerPrizeCup} (${match.matchId})`
+      `[BOT] Match finished: ${result.homeScore}-${result.awayScore} prize=${playerPrizeWei}wei (${match.matchId})`
     );
   } catch (err) {
     console.error("[BOT] finishBotMatch error:", err);

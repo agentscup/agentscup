@@ -1,52 +1,98 @@
 "use client";
 
-import { FC, ReactNode, useMemo } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { WagmiProvider, useAccount } from "wagmi";
 import {
-  ConnectionProvider,
-  WalletProvider as SolanaWalletProvider,
-} from "@solana/wallet-adapter-react";
-import { WalletModalProvider } from "@solana/wallet-adapter-react-ui";
-import { PhantomWalletAdapter } from "@solana/wallet-adapter-phantom";
-import { SolflareWalletAdapter } from "@solana/wallet-adapter-solflare";
-import { CoinbaseWalletAdapter } from "@solana/wallet-adapter-coinbase";
-import { TrustWalletAdapter } from "@solana/wallet-adapter-trust";
-import { LedgerWalletAdapter } from "@solana/wallet-adapter-ledger";
-import { TorusWalletAdapter } from "@solana/wallet-adapter-torus";
-import { BackpackWalletAdapter } from "@solana/wallet-adapter-backpack";
-import { clusterApiUrl } from "@solana/web3.js";
+  RainbowKitProvider,
+  darkTheme,
+  lightTheme,
+} from "@rainbow-me/rainbowkit";
+import { useEffect, useRef, type ReactNode } from "react";
+import "@rainbow-me/rainbowkit/styles.css";
 
-import "@solana/wallet-adapter-react-ui/styles.css";
+import { wagmiConfig, TARGET_CHAIN } from "@/lib/wagmi";
+import { connectUser } from "@/lib/api";
 
-interface Props {
-  children: ReactNode;
+/**
+ * Root wallet provider for the game. Replaces the old Solana
+ * wallet-adapter stack with wagmi + RainbowKit so every game page
+ * (packs / marketplace / match / squad / collection) connects to
+ * the same MetaMask / Coinbase / WalletConnect / Rainbow instance.
+ *
+ * The QueryClient is created at module scope so hot-reload keeps
+ * the cache warm between component reloads; wagmi expects a stable
+ * query client reference.
+ */
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 30_000,
+      retry: 1,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
+
+/**
+ * Fires `/api/users/connect` once per wallet address per session.
+ * The endpoint upserts the users row and, on first sight, creates a
+ * leaderboard row seeded with a random team name ("Neon Wolves 42").
+ * Hitting this at the provider level means every page downstream —
+ * squad, match, leaderboard — sees the same pre-assigned name
+ * without each page having to check for themselves.
+ *
+ * Guarded by a ref so a transient disconnect/reconnect doesn't
+ * spam the endpoint. The call itself is idempotent via Postgres
+ * upsert, so a stray retry is harmless.
+ */
+function WalletSessionBootstrap() {
+  const { address, isConnected } = useAccount();
+  const synced = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!isConnected || !address) {
+      synced.current = null;
+      return;
+    }
+    const lower = address.toLowerCase();
+    if (synced.current === lower) return;
+    synced.current = lower;
+    connectUser(lower).catch((err) => {
+      // Non-fatal: the backend is happy to lazy-create the user on
+      // first pack open / match join, this call is just for the
+      // team-name seed. A network blip here shouldn't disrupt the
+      // UI, so we just log and move on.
+      if (typeof window !== "undefined") {
+        console.warn("[wallet] connectUser bootstrap failed:", err);
+      }
+    });
+  }, [address, isConnected]);
+
+  return null;
 }
 
-const WalletProvider: FC<Props> = ({ children }) => {
-  const endpoint = useMemo(
-    () => process.env.NEXT_PUBLIC_SOLANA_RPC_URL || clusterApiUrl("mainnet-beta"),
-    [],
-  );
-
-  const wallets = useMemo(
-    () => [
-      new PhantomWalletAdapter(),
-      new SolflareWalletAdapter(),
-      new CoinbaseWalletAdapter(),
-      new TrustWalletAdapter(),
-      new BackpackWalletAdapter(),
-      new LedgerWalletAdapter(),
-      new TorusWalletAdapter(),
-    ],
-    [],
-  );
-
+export default function WalletProvider({ children }: { children: ReactNode }) {
   return (
-    <ConnectionProvider endpoint={endpoint}>
-      <SolanaWalletProvider wallets={wallets} autoConnect>
-        <WalletModalProvider>{children}</WalletModalProvider>
-      </SolanaWalletProvider>
-    </ConnectionProvider>
+    <WagmiProvider config={wagmiConfig}>
+      <QueryClientProvider client={queryClient}>
+        <RainbowKitProvider
+          initialChain={TARGET_CHAIN}
+          theme={darkTheme({
+            accentColor: "#FFD700",
+            accentColorForeground: "#1a1200",
+            borderRadius: "small",
+            fontStack: "system",
+          })}
+          modalSize="compact"
+          showRecentTransactions={true}
+        >
+          <WalletSessionBootstrap />
+          {children}
+        </RainbowKitProvider>
+      </QueryClientProvider>
+    </WagmiProvider>
   );
-};
+}
 
-export default WalletProvider;
+// Re-export for consumers that need to build custom themes.
+export { lightTheme };

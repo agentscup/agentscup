@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { auth } from "@/auth";
 import type { FounderCard, Position } from "@/lib/earlyAccess/cardGen";
-import { scoreToRarity } from "@/lib/earlyAccess/cardGen";
+import { overallToRarity } from "@/lib/earlyAccess/cardGen";
 
 /**
  * GET /api/early-access/status
@@ -63,9 +63,11 @@ export async function GET(req: Request) {
     handle: data.x_handle as string,
     displayName: (data.x_display_name as string | null) ?? (data.x_handle as string),
     avatarUrl: (data.x_avatar_url as string | null) ?? undefined,
-    // Derive from live score so a returning user never sees a stale
-    // rarity label left over from an earlier scoring formula.
-    rarity: scoreToRarity(data.score as number),
+    // Derive from the visible overall so a returning user's rarity
+    // label always matches what they see on the leaderboard / card
+    // page. Stored rarity can drift under formula changes; overall
+    // is the single source of truth for tier display.
+    rarity: overallToRarity(data.overall as number),
     score: data.score as number,
     position: data.position as Position,
     overall: data.overall as number,

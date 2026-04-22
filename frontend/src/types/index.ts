@@ -61,23 +61,35 @@ export interface Match {
   awayScore: number;
   status: MatchStatus;
   events: MatchEvent[];
-  entryFeeCup: number;
+  /** Entry fee in wei as a string (bigint-safe JSON). */
+  entryFeeWei: string;
 }
 
 export interface Listing {
   id: string;
   userAgent: UserAgent;
   sellerWallet: string;
-  priceCup: number;
+  /** Listing price in wei as a string. The on-chain listingId the
+   *  seller registered; required for buyers to call buyAgent(). */
+  priceWei: string;
+  listingIdHex: string;
   listingType: ListingType;
   expiresAt: string;
   createdAt: string;
 }
 
+/**
+ * Pack configuration as displayed to the buyer. `tier` is the numeric
+ * enum value the PackStore contract expects on-chain; `priceWei` is
+ * the exact wei amount to forward in msg.value (validated bit-for-bit
+ * by the backend verifier before cards are rolled).
+ */
 export interface PackType {
   id: string;
   name: string;
-  priceCup: number;
+  tier: number;
+  priceEth: string;
+  priceWei: string;
   cardCount: number;
   rareGuarantee: number;
   epicChance: number;

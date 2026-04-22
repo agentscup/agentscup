@@ -1,29 +1,38 @@
 import { Router, Request, Response } from "express";
 import { supabase } from "../lib/supabase";
-import { verifyTokenPaymentTransaction } from "../lib/solana";
+import { verifyPackPurchase, isEvmAddress } from "../lib/evm";
 import { selectPackCards, PACK_CONFIGS } from "../services/packService";
 import { packLimiter } from "../middleware/rateLimiter";
 import { dedup } from "../middleware/dedup";
 
 const router = Router();
 
-// Dedup by txSignature — prevents concurrent duplicate requests
-const packDedup = dedup((req) => req.body?.txSignature || null);
+// Dedup by txHash — prevents concurrent duplicate requests mid-flight.
+// Once the DB UNIQUE constraint on tx_signature kicks in it would catch
+// a dupe anyway, but the in-memory dedup saves a round-trip to the
+// chain + DB under a retry storm.
+const packDedup = dedup((req) => req.body?.txHash || null);
 
-// POST /api/packs/open — open a pack after on-chain purchase
+// POST /api/packs/open — credit a pack after an on-chain AgentsCupPackStore.buyPack
 router.post(
   "/open",
   packLimiter,
   packDedup,
   async (req: Request, res: Response) => {
     try {
-      const { walletAddress, packType, txSignature } = req.body;
+      const { walletAddress, packType, txHash } = req.body;
 
       // ── Validation ──
-      if (!walletAddress || !packType || !txSignature) {
+      if (!walletAddress || !packType || !txHash) {
         res.status(400).json({
-          error: "walletAddress, packType, and txSignature are required",
+          error: "walletAddress, packType, and txHash are required",
         });
+        return;
+      }
+      if (!isEvmAddress(walletAddress)) {
+        res
+          .status(400)
+          .json({ error: "walletAddress must be a 0x-prefixed EVM address" });
         return;
       }
 
@@ -33,31 +42,42 @@ router.post(
         return;
       }
 
-      // ── Verify on-chain $CUP payment ──
-      // Checks: tx exists, succeeded, payer matches, treasury received >= priceCup tokens.
-      const verification = await verifyTokenPaymentTransaction(
-        txSignature,
+      // ── Verify the on-chain tx matches our expectation ──
+      // Checks: tx mined + succeeded, hit the PackStore contract, emitted
+      // PackPurchased with matching buyer + amount >= priceWei.
+      const verification = await verifyPackPurchase(
+        txHash,
         walletAddress,
-        packConfig.priceCup
+        BigInt(packConfig.priceWei)
       );
       if (!verification.valid) {
-        console.log(`[PACK] TX verification failed: ${verification.error} wallet=${walletAddress} tx=${txSignature}`);
-        res.status(400).json({ error: `TX verification failed: ${verification.error}` });
+        console.log(
+          `[PACK] TX verification failed: ${verification.reason} wallet=${walletAddress} tx=${txHash}`
+        );
+        res
+          .status(400)
+          .json({ error: `TX verification failed: ${verification.reason}` });
         return;
       }
-      console.log(`[PACK] TX verified for ${packType} wallet=${walletAddress}`);
+      console.log(
+        `[PACK] TX verified for ${packType} wallet=${walletAddress} amount=${verification.amountWei}wei`
+      );
 
-      // ── Select random cards (pure function, no DB writes) ──
+      // ── Roll cards ──
       const { agentIds, mintAddresses } = await selectPackCards(packType);
 
-      // ── Atomic DB operation via PostgreSQL function ──
-      // This handles: idempotency check, user upsert, card creation, purchase record
-      // All in a single transaction — impossible to get partial state
+      // ── Atomic DB state ──
+      // The `p_amount_cup` parameter is now a chain-agnostic numeric —
+      // we feed the wei amount directly (still fits in the column's
+      // NUMERIC range, no schema change needed). Legacy Solana rows
+      // hold $CUP base units; Base rows hold wei. Reports that care
+      // about the distinction can filter on tx_signature prefix
+      // (Solana sigs = base58, EVM hashes = 0x-prefixed hex).
       const { data, error } = await supabase.rpc("open_pack_atomic", {
-        p_wallet_address: walletAddress,
+        p_wallet_address: walletAddress.toLowerCase(),
         p_pack_type: packType,
-        p_tx_signature: txSignature,
-        p_amount_cup: packConfig.priceCup,
+        p_tx_signature: txHash.toLowerCase(),
+        p_amount_cup: Number(verification.amountWei ?? 0n),
         p_agent_ids: agentIds,
         p_mint_addresses: mintAddresses,
       });
@@ -65,30 +85,28 @@ router.post(
       if (error) {
         // UNIQUE constraint on tx_signature — another request beat us
         if (error.code === "23505" || error.message?.includes("unique")) {
-          // Fetch the existing purchase and return those cards
           const { data: existing } = await supabase
             .from("pack_purchases")
             .select("cards_received")
-            .eq("tx_signature", txSignature)
+            .eq("tx_signature", txHash.toLowerCase())
             .single();
 
           if (existing) {
-            // Fetch the full agent data for these cards
             const cardIds = existing.cards_received as string[];
-            const { data: agents } = await supabase
-              .from("user_agents")
-              .select("*, agents(*)")
-              .in("agent_id", cardIds)
-              .eq("user_id", (
-                await supabase
-                  .from("users")
-                  .select("id")
-                  .eq("wallet_address", walletAddress)
-                  .single()
-              ).data?.id || "");
-
-            res.json({ cards: agents || [], already_processed: true });
-            return;
+            const { data: user } = await supabase
+              .from("users")
+              .select("id")
+              .eq("wallet_address", walletAddress.toLowerCase())
+              .maybeSingle();
+            if (user) {
+              const { data: agents } = await supabase
+                .from("user_agents")
+                .select("*, agents(*)")
+                .in("agent_id", cardIds)
+                .eq("user_id", user.id);
+              res.json({ cards: agents || [], already_processed: true });
+              return;
+            }
           }
         }
         throw error;
@@ -107,7 +125,7 @@ router.post(
   }
 );
 
-// GET /api/packs/types
+// GET /api/packs/types — sent to the frontend so it can display prices
 router.get("/types", (_req: Request, res: Response) => {
   res.json(PACK_CONFIGS);
 });

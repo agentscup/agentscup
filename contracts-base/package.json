@@ -4,9 +4,10 @@
   "description": "Agents Cup — Base network contracts (EVM migration from Solana)",
   "private": true,
   "scripts": {
-    "build": "hardhat compile",
+    "build": "hardhat compile && node scripts/extract-abi.js",
     "test": "hardhat test",
     "node": "hardhat node",
+    "abi:extract": "node scripts/extract-abi.js",
     "deploy:local": "hardhat run scripts/deploy.ts --network localhost",
     "deploy:sepolia": "hardhat run scripts/deploy.ts --network baseSepolia",
     "deploy:base": "hardhat run scripts/deploy.ts --network base",

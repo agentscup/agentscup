@@ -1,8 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
-import { useWallet } from "@solana/wallet-adapter-react";
-import { PublicKey } from "@solana/web3.js";
+import { useAccount } from "wagmi";
 import { Agent, Rarity } from "@/types";
 import { getRarityColor } from "@/lib/utils";
 import dynamic from "next/dynamic";
@@ -11,20 +10,52 @@ import AgentCard from "@/components/cards/AgentCard";
 const AgentCardDetail = dynamic(() => import("@/components/cards/AgentCardDetail"), {
   ssr: false,
 });
-import { getListings, getUser, listAgent, cancelListing, buyAgent, getMarketplaceStats, getTradeHistory, type TradeHistoryRow } from "@/lib/api";
+import {
+  getListings,
+  getUser,
+  listAgent,
+  cancelListing,
+  buyAgent,
+  getMarketplaceStats,
+  getTradeHistory,
+  type TradeHistoryRow,
+} from "@/lib/api";
 import { mapUserAgentsFull, mapDbAgent, MappedUserAgent, DbUserAgent, DbAgent } from "@/lib/mapAgent";
-import { sendCupMarketplacePayment, connection } from "@/lib/solana";
+import {
+  listAgentOnChain,
+  buyAgentOnChain,
+  cancelListingOnChain,
+  randomBytes32,
+  hashToBytes32,
+  parseEth,
+  formatEth,
+} from "@/lib/evm";
 
-/* Pending buy stored in ref so it survives re-renders but not page reloads */
+/**
+ * Marketplace on Base:
+ *   - Listing: seller calls AgentsCupMarketplace.listAgent(listingId, agentId, priceWei, ttl)
+ *              backend mirrors the row with the same listingId so buyers can resolve it.
+ *   - Buy:     buyer calls AgentsCupMarketplace.buyAgent(listingId) with msg.value = priceWei
+ *              backend verifies the AgentSold event, then swaps ownership in DB.
+ *   - Cancel:  seller calls AgentsCupMarketplace.cancelListing(listingId), then we flip
+ *              the DB row inactive. Gas-only, no ETH moved.
+ */
+
+/** Pending buy stored in ref — buy tx confirmed but backend swap failed */
 interface PendingBuy {
   listingId: string;
-  txSignature: string;
+  txHash: string;
 }
 
 interface ListingRow {
   id: string;
   seller_wallet: string;
-  price_cup: number;
+  seller_evm_address: string | null;
+  /** Legacy column — now holds wei on Base rows. */
+  price_cup: number | null;
+  /** Canonical wei string. */
+  price_wei: string | null;
+  listing_id_hex: string | null;
   listing_type: string;
   created_at: string;
   expires_at: string;
@@ -43,8 +74,27 @@ const SORT_OPTIONS = [
 
 type Tab = "browse" | "sell" | "history";
 
+/** Resolve the canonical wei price for a listing row. `price_wei` wins when
+ *  present; legacy rows without it fall back to the `price_cup` numeric. */
+function listingWei(l: ListingRow | TradeHistoryRow): bigint {
+  const w = (l as ListingRow).price_wei ?? null;
+  if (w) {
+    try {
+      return BigInt(w);
+    } catch {
+      // fall through
+    }
+  }
+  const legacy = l.price_cup ?? 0;
+  try {
+    return BigInt(Math.floor(Number(legacy)));
+  } catch {
+    return 0n;
+  }
+}
+
 export default function MarketplacePage() {
-  const { publicKey, signTransaction } = useWallet();
+  const { address } = useAccount();
 
   // Tab
   const [tab, setTab] = useState<Tab>("browse");
@@ -124,16 +174,16 @@ export default function MarketplacePage() {
 
   // Fetch user agents for sell tab
   const fetchMyAgents = useCallback(() => {
-    if (!publicKey) { setMyAgents([]); return; }
+    if (!address) { setMyAgents([]); return; }
     setLoadingAgents(true);
-    getUser(publicKey.toBase58())
+    getUser(address.toLowerCase())
       .then((data: unknown) => {
         const userData = data as { agents?: DbUserAgent[] };
         setMyAgents(mapUserAgentsFull(userData.agents || []));
       })
       .catch(() => setMyAgents([]))
       .finally(() => setLoadingAgents(false));
-  }, [publicKey]);
+  }, [address]);
 
   useEffect(() => {
     if (tab === "sell") fetchMyAgents();
@@ -149,83 +199,134 @@ export default function MarketplacePage() {
       items = items.filter((l) => l.user_agents?.agents?.name?.toLowerCase().includes(q));
     }
     switch (sort) {
-      case "price-asc": items.sort((a, b) => Number(a.price_cup) - Number(b.price_cup)); break;
-      case "price-desc": items.sort((a, b) => Number(b.price_cup) - Number(a.price_cup)); break;
-      case "rating-desc": items.sort((a, b) => (b.user_agents?.agents?.overall || 0) - (a.user_agents?.agents?.overall || 0)); break;
-      default: break;
+      case "price-asc":
+        items.sort((a, b) => {
+          const aw = listingWei(a);
+          const bw = listingWei(b);
+          return aw < bw ? -1 : aw > bw ? 1 : 0;
+        });
+        break;
+      case "price-desc":
+        items.sort((a, b) => {
+          const aw = listingWei(a);
+          const bw = listingWei(b);
+          return aw < bw ? 1 : aw > bw ? -1 : 0;
+        });
+        break;
+      case "rating-desc":
+        items.sort((a, b) => (b.user_agents?.agents?.overall || 0) - (a.user_agents?.agents?.overall || 0));
+        break;
+      default:
+        break;
     }
     return items;
   }, [listings, posFilter, rarityFilter, sort, search]);
 
   // My listings (active listings I own)
   const myListings = useMemo(() => {
-    if (!publicKey) return [];
-    const wallet = publicKey.toBase58();
-    return listings.filter(l => l.seller_wallet === wallet && l.user_agents?.agents);
-  }, [listings, publicKey]);
+    if (!address) return [];
+    const wallet = address.toLowerCase();
+    return listings.filter((l) => {
+      const sellerLc =
+        (l.seller_evm_address || "").toLowerCase() ||
+        (l.seller_wallet || "").toLowerCase();
+      return sellerLc === wallet && l.user_agents?.agents;
+    });
+  }, [listings, address]);
 
   // Agents available to list (not already listed)
   const unlistedAgents = useMemo(() => {
     return myAgents.filter(ua => !ua.isListed && ua.agent.position !== "MGR");
   }, [myAgents]);
 
-  // List agent for sale
+  // List agent for sale — writes on-chain first, mirrors to backend once confirmed
   async function handleList(userAgentId: string) {
-    if (!publicKey) return;
-    const price = Math.floor(parseFloat(listingPrices[userAgentId] || "0"));
-    if (!price || price <= 0) {
-      setSellError("Enter a valid price in $CUP (whole tokens)");
+    if (!address) return;
+    const raw = (listingPrices[userAgentId] || "").trim();
+    let priceWei: bigint;
+    try {
+      priceWei = parseEth(raw);
+      if (priceWei <= 0n) throw new Error("zero");
+    } catch {
+      setSellError("Enter a valid ETH price (e.g. 0.01)");
       return;
     }
+
     setSellError(null);
     setSellSuccess(null);
     setListingInProgress(userAgentId);
     try {
-      await listAgent({
-        walletAddress: publicKey.toBase58(),
-        userAgentId,
-        priceCup: price,
+      const listingId = randomBytes32();
+      const agentIdHex = hashToBytes32(userAgentId);
+      // 7 days — matches backend LISTING_TTL_MS, keeps the on-chain slot
+      // live for the same window without needing contract-side cron.
+      const ttlSeconds = 7 * 24 * 60 * 60;
+
+      await listAgentOnChain({
+        listingId,
+        agentId: agentIdHex,
+        priceWei,
+        ttlSeconds,
       });
+
+      await listAgent({
+        walletAddress: address.toLowerCase(),
+        userAgentId,
+        priceWei: priceWei.toString(),
+        listingIdHex: listingId,
+      });
+
       setSellSuccess("Agent listed successfully!");
-      setListingPrices(prev => { const n = { ...prev }; delete n[userAgentId]; return n; });
+      setListingPrices((prev) => { const n = { ...prev }; delete n[userAgentId]; return n; });
       fetchListings();
       fetchMyAgents();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Failed to list agent";
+      let msg = err instanceof Error ? err.message : "Failed to list agent";
+      const lc = msg.toLowerCase();
+      if (lc.includes("user rejected") || lc.includes("user denied")) {
+        msg = "Transaction rejected in wallet.";
+      }
       setSellError(msg);
     } finally {
       setListingInProgress(null);
     }
   }
 
-  // Cancel listing
-  async function handleCancel(listingId: string) {
-    if (!publicKey) return;
-    setCancellingId(listingId);
+  // Cancel listing — on-chain cancel, then flip DB row inactive.
+  async function handleCancel(listing: ListingRow) {
+    if (!address) return;
+    setCancellingId(listing.id);
     setSellError(null);
     try {
-      await cancelListing(listingId, publicKey.toBase58());
+      if (listing.listing_id_hex) {
+        await cancelListingOnChain(listing.listing_id_hex as `0x${string}`);
+      }
+      await cancelListing(listing.id, address.toLowerCase());
       setSellSuccess("Listing cancelled!");
       fetchListings();
       fetchMyAgents();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Failed to cancel";
+      let msg = err instanceof Error ? err.message : "Failed to cancel";
+      const lc = msg.toLowerCase();
+      if (lc.includes("user rejected") || lc.includes("user denied")) {
+        msg = "Transaction rejected in wallet.";
+      }
       setSellError(msg);
     } finally {
       setCancellingId(null);
     }
   }
 
-  // Claim a pending buy (retry backend call only — $CUP already sent)
+  // Retry a pending buy — tx is on-chain, just re-hit the backend
   async function claimPendingBuy(pending: PendingBuy) {
-    if (!publicKey) return;
+    if (!address) return;
     setBuyingId(pending.listingId);
     setBuyError(null);
     try {
       await buyAgent({
-        buyerWallet: publicKey.toBase58(),
+        buyerWallet: address.toLowerCase(),
         listingId: pending.listingId,
-        txSignature: pending.txSignature,
+        txHash: pending.txHash,
       });
       pendingBuy.current = null;
       setBuyError(null);
@@ -239,13 +340,17 @@ export default function MarketplacePage() {
     }
   }
 
-  // Buy agent with retry-safe flow (paid in $CUP)
+  // Buy agent — pay ETH on-chain then swap ownership server-side
   async function handleBuy(listing: ListingRow) {
-    if (!publicKey || !signTransaction) return;
+    if (!address) return;
     const agent = listing.user_agents?.agents;
     if (!agent) return;
+    if (!listing.listing_id_hex) {
+      setBuyError("This listing was created before the Base migration and can't be purchased. Ask the seller to re-list.");
+      return;
+    }
 
-    // If there's a pending buy for this listing, retry the backend call only
+    // Pending retry
     if (pendingBuy.current && pendingBuy.current.listingId === listing.id) {
       await claimPendingBuy(pendingBuy.current);
       return;
@@ -254,38 +359,36 @@ export default function MarketplacePage() {
     setBuyingId(listing.id);
     setBuyError(null);
     try {
-      // Step 1: Send $CUP payment (buyer → seller + treasury fee)
-      const sellerPubkey = new PublicKey(listing.seller_wallet);
-      const signature = await sendCupMarketplacePayment(
-        connection,
-        publicKey,
-        sellerPubkey,
-        signTransaction,
-        Number(listing.price_cup)
-      );
+      const priceWei = listingWei(listing);
+      const txHash = await buyAgentOnChain(listing.listing_id_hex as `0x${string}`, priceWei);
 
-      // Step 2: Store pending buy IMMEDIATELY after tx is sent
-      pendingBuy.current = { listingId: listing.id, txSignature: signature };
+      // Stash tx hash so a server-side failure can be retried without re-paying
+      pendingBuy.current = { listingId: listing.id, txHash };
 
-      // Step 3: Notify backend to transfer ownership
       await buyAgent({
-        buyerWallet: publicKey.toBase58(),
+        buyerWallet: address.toLowerCase(),
         listingId: listing.id,
-        txSignature: signature,
+        txHash,
       });
 
-      // Success — clear pending
       pendingBuy.current = null;
       setBuyError(null);
       fetchListings();
       if (tab === "sell") fetchMyAgents();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Purchase failed";
+      let msg = err instanceof Error ? err.message : "Purchase failed";
+      const lc = msg.toLowerCase();
+      if (lc.includes("insufficient funds") || lc.includes("exceeds the balance")) {
+        msg = "Insufficient ETH balance for this purchase.";
+      } else if (lc.includes("user rejected") || lc.includes("user denied")) {
+        msg = "Transaction rejected in wallet.";
+      } else if (lc.includes("chain") && lc.includes("mismatch")) {
+        msg = "Wrong network — switch your wallet to Base.";
+      }
+
       if (pendingBuy.current) {
-        // $CUP was sent but backend call failed — show retry message
         setBuyError(`Payment sent but transfer failed: ${msg}. Click BUY again to claim your agent.`);
       } else {
-        // TX itself failed (user rejected, insufficient balance, etc.)
         setBuyError(msg);
       }
     } finally {
@@ -340,11 +443,13 @@ export default function MarketplacePage() {
           </div>
           <div className="text-center">
             <div className="font-pixel text-[6px] text-white/40 tracking-wider mb-1">VOLUME</div>
-            <div className="font-pixel text-[10px] text-[#FFD700]">{stats.totalVolume.toLocaleString()} $CUP</div>
+            <div className="font-pixel text-[10px] text-[#FFD700]">{formatEth(BigInt(stats.totalVolume || 0))} ETH</div>
           </div>
           <div className="text-center">
-            <div className="font-pixel text-[6px] text-white/40 tracking-wider mb-1">FLOOR PRICE</div>
-            <div className="font-pixel text-[10px] text-[#00E5FF]">{stats.floorPrice > 0 ? `${stats.floorPrice.toLocaleString()} $CUP` : "—"}</div>
+            <div className="font-pixel text-[6px] text-white/40 tracking-wider mb-1">FLOOR</div>
+            <div className="font-pixel text-[10px] text-[#00E5FF]">
+              {stats.floorPrice > 0 ? `${formatEth(BigInt(stats.floorPrice))} ETH` : "—"}
+            </div>
           </div>
         </div>
       </div>
@@ -408,8 +513,12 @@ export default function MarketplacePage() {
               {filtered.map((listing) => {
                 const agent = listing.user_agents?.agents;
                 if (!agent) return null;
-                const isMine = publicKey && listing.seller_wallet === publicKey.toBase58();
+                const sellerLc =
+                  (listing.seller_evm_address || "").toLowerCase() ||
+                  (listing.seller_wallet || "").toLowerCase();
+                const isMine = !!address && sellerLc === address.toLowerCase();
                 const isBuying = buyingId === listing.id;
+                const priceWei = listingWei(listing);
                 return (
                   <div key={listing.id} className="pixel-card p-3 hover:border-[#1E8F4E] transition-colors">
                     <div className="flex justify-center mb-3">
@@ -418,11 +527,11 @@ export default function MarketplacePage() {
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
                         <span className="font-pixel text-[6px] text-white/40 tracking-wider">PRICE</span>
-                        <span className="font-pixel text-[8px] text-white">{Number(listing.price_cup).toLocaleString()} $CUP</span>
+                        <span className="font-pixel text-[8px] text-white">{formatEth(priceWei)} ETH</span>
                       </div>
                       <div className="flex items-center justify-between">
                         <span className="font-pixel text-[5px] text-white/25 tracking-wider">
-                          {listing.seller_wallet.slice(0, 4)}...{listing.seller_wallet.slice(-4)}
+                          {sellerLc.slice(0, 6)}...{sellerLc.slice(-4)}
                         </span>
                       </div>
                       {isMine ? (
@@ -432,7 +541,7 @@ export default function MarketplacePage() {
                         return (
                           <button
                             onClick={() => handleBuy(listing)}
-                            disabled={!publicKey || isBuying}
+                            disabled={!address || isBuying}
                             className="w-full py-2 font-pixel text-[7px] tracking-wider transition-colors disabled:opacity-40"
                             style={{
                               backgroundColor: hasPending ? "#ef444415" : getRarityColor(agent.rarity) + "15",
@@ -457,7 +566,7 @@ export default function MarketplacePage() {
       {/* ═══════════ SELL TAB ═══════════ */}
       {tab === "sell" && (
         <>
-          {!publicKey ? (
+          {!address ? (
             <div className="text-center py-20">
               <div className="font-pixel text-2xl text-white/30 mb-4">!</div>
               <h3 className="font-pixel text-[10px] text-white mb-2 tracking-wider">WALLET NOT CONNECTED</h3>
@@ -493,6 +602,7 @@ export default function MarketplacePage() {
                       const agent = listing.user_agents?.agents;
                       if (!agent) return null;
                       const isCancelling = cancellingId === listing.id;
+                      const priceWei = listingWei(listing);
                       return (
                         <div key={listing.id} className="pixel-card p-3" style={{ borderColor: "#1E8F4E" }}>
                           <div className="flex justify-center mb-3">
@@ -501,10 +611,10 @@ export default function MarketplacePage() {
                           <div className="space-y-2">
                             <div className="flex items-center justify-between">
                               <span className="font-pixel text-[6px] text-white/40 tracking-wider">PRICE</span>
-                              <span className="font-pixel text-[8px] text-white">{Number(listing.price_cup).toLocaleString()} $CUP</span>
+                              <span className="font-pixel text-[8px] text-white">{formatEth(priceWei)} ETH</span>
                             </div>
                             <button
-                              onClick={() => handleCancel(listing.id)}
+                              onClick={() => handleCancel(listing)}
                               disabled={isCancelling}
                               className="w-full py-2 font-pixel text-[7px] tracking-wider transition-colors disabled:opacity-40"
                               style={{
@@ -550,19 +660,18 @@ export default function MarketplacePage() {
                         <div className="space-y-2">
                           <div className="flex items-center gap-2">
                             <input
-                              type="number"
-                              step="1"
-                              min="1"
-                              placeholder="$CUP"
+                              type="text"
+                              inputMode="decimal"
+                              placeholder="0.01"
                               value={price}
                               onChange={(e) => setListingPrices(prev => ({ ...prev, [ua.userAgentId]: e.target.value }))}
                               className="pixel-input flex-1 text-[8px] py-1.5"
                             />
-                            <span className="font-pixel text-[6px] text-white/40 tracking-wider">$CUP</span>
+                            <span className="font-pixel text-[6px] text-white/40 tracking-wider">ETH</span>
                           </div>
                           <button
                             onClick={() => handleList(ua.userAgentId)}
-                            disabled={isListing || !price || parseFloat(price) <= 0}
+                            disabled={isListing || !price || !/^\d+(\.\d+)?$/.test(price.trim())}
                             className="w-full py-2 font-pixel text-[7px] tracking-wider transition-colors disabled:opacity-40"
                             style={{
                               backgroundColor: "#1E8F4E15",
@@ -617,6 +726,7 @@ export default function MarketplacePage() {
                 const date = new Date(trade.created_at);
                 const dateStr = `${date.getMonth() + 1}/${date.getDate()}`;
                 const timeStr = `${date.getHours().toString().padStart(2, "0")}:${date.getMinutes().toString().padStart(2, "0")}`;
+                const priceWei = listingWei(trade as unknown as ListingRow);
                 return (
                   <div
                     key={trade.id}
@@ -641,7 +751,7 @@ export default function MarketplacePage() {
                       <span className="font-pixel text-[7px] text-white/60 tracking-wider">{agent.position}</span>
                     </div>
                     <div className="text-center">
-                      <span className="font-pixel text-[8px] text-[#FFD700] tracking-wider">{Number(trade.price_cup).toLocaleString()} $CUP</span>
+                      <span className="font-pixel text-[8px] text-[#FFD700] tracking-wider">{formatEth(priceWei)} ETH</span>
                     </div>
                     <div className="text-center">
                       <span className="font-pixel text-[6px] text-white/40 tracking-wider">{dateStr} {timeStr}</span>

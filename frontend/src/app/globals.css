@@ -342,7 +342,7 @@ h1, h2, h3, h4, h5, h6 {
   color: #ffffff;
 }
 
-/* ── Solana Wallet Button — pixel theme override ─── */
+/* ── RainbowKit ConnectButton — pixel theme override ─── */
 .wallet-btn-wrapper .wallet-adapter-button {
   font-family: var(--font-pixel) !important;
   font-size: 7px !important;
@@ -451,4 +451,114 @@ h1, h2, h3, h4, h5, h6 {
 
 .wallet-adapter-dropdown-list-item:hover {
   background: #1a3a1a !important;
+}
+
+/* ═════════════════════════════════════════════════════════════════
+ *  MOBILE OPTIMISATIONS
+ * ═════════════════════════════════════════════════════════════════
+ *
+ *  The pixel aesthetic relies on tiny font sizes (6-10px) that don't
+ *  play nicely with native mobile browsers out of the box. The rules
+ *  below target three classes of issue:
+ *
+ *   1. iOS Safari input auto-zoom. Any focused input with computed
+ *      font-size < 16px triggers a zoom on tap — breaks scroll
+ *      position and looks broken. We bump the form-element font
+ *      size to 16px on mobile while keeping the text visually small
+ *      via letter-spacing tweaks. The zoom simply doesn't fire.
+ *
+ *   2. Touch-target minimum. WCAG + Apple HIG both recommend 44x44
+ *      as the smallest tap target. Our .pixel-btn stays above that,
+ *      but filter selects, wallet-connect buttons, and inline
+ *      tab-switchers can go smaller. We enforce a min-height on
+ *      every interactive element.
+ *
+ *   3. Horizontal scroll. Any element wider than 100vw on a phone
+ *      turns the whole page into a horizontal scroll wrapper that
+ *      most users treat as "site is broken". We catch the common
+ *      offenders (wide tables, wallet modal overflow, SVG pitches)
+ *      with overflow-x: hidden on <body>.
+ */
+
+html,
+body {
+  overflow-x: hidden;
+}
+
+/* iPhone safe-area padding — adds a little breathing room around
+ * the notch / home-indicator strip on modern iPhones. The env()
+ * values return 0 on browsers that don't support them, so this is
+ * progressive enhancement. */
+@supports (padding: env(safe-area-inset-top)) {
+  body {
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+}
+
+@media (max-width: 640px) {
+  /* iOS auto-zoom prevention — 16px is the magic threshold. We
+   * hold the pixel look by scaling the RENDERED text smaller than
+   * the base font-size via the existing font-pixel styling above
+   * these rules (those .text-[7px] etc utility spans live inside
+   * the form element, not on it). The INPUT itself carries 16px
+   * so Safari's heuristic skips the zoom. */
+  .pixel-input,
+  .pixel-select,
+  input[type="text"],
+  input[type="number"],
+  input[type="search"],
+  input[type="email"],
+  input[type="tel"],
+  textarea {
+    font-size: 16px !important;
+    min-height: 44px;
+  }
+
+  /* Touch target minimums — 44x44 is the floor. Pixel buttons
+   * already pad to 48+; this catches the tab buttons, inline
+   * chips, and the small filter buttons scattered across the game
+   * pages. */
+  button,
+  .pixel-btn,
+  .pixel-btn-outline,
+  [role="button"],
+  a.pixel-btn,
+  a.pixel-btn-outline {
+    min-height: 44px;
+  }
+
+  /* Wallet modal — RainbowKit's default width is 360px which is
+   * wider than the narrowest phones (320px) and pushes content
+   * off-screen. Clamp it to the viewport minus a margin and cap
+   * the height so the wallet list scrolls inside the modal
+   * instead of pushing the connect button below the fold. */
+  [data-rk] div[role="dialog"] {
+    max-width: calc(100vw - 16px) !important;
+    max-height: calc(100dvh - 32px) !important;
+  }
+
+  /* Tighten home page hero vertical rhythm — the trophy svg plus
+   * the two CTAs don't need the 16 rem of top padding from the
+   * desktop layout. */
+  section:first-of-type {
+    padding-top: 2.5rem;
+  }
+}
+
+/* Tap highlight — iOS shows a grey flash on tap that clashes with
+ * the pixel aesthetic. Kill it on every interactive element, then
+ * rely on the existing :active CSS already wired into .pixel-btn
+ * etc. */
+a,
+button,
+[role="button"] {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+/* Stop long tokens (contract addresses, long handles) from blowing
+ * out narrow parent containers on mobile. */
+.break-address {
+  word-break: break-all;
 }

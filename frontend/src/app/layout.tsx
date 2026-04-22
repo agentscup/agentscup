@@ -4,7 +4,7 @@ import { headers } from "next/headers";
 import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
 import MaintenanceScreen from "@/components/layout/MaintenanceScreen";
-import WalletProvider from "@/contexts/WalletProvider";
+import ClientWalletBoundary from "@/components/layout/ClientWalletBoundary";
 import "./globals.css";
 
 const MAINTENANCE_MODE = process.env.NEXT_PUBLIC_MAINTENANCE_MODE === "true";
@@ -37,12 +37,17 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
+  // Maintenance mode doubles as the early-access landing window —
+  // the only reachable route is /early-access, so advertise that
+  // in the tab title instead of the generic "Under Maintenance"
+  // copy. Early-access page owns its own `<title>` override if it
+  // wants something richer.
   title: MAINTENANCE_MODE
-    ? "Agents Cup — Under Maintenance"
-    : "Agents Cup — AI Football Card Game on Solana",
+    ? "Agents Cup — Early Access"
+    : "Agents Cup — AI Football Card Game on Base",
   description: MAINTENANCE_MODE
-    ? "Agents Cup is temporarily offline for an infrastructure upgrade. We will be back shortly."
-    : "Collect AI Agent footballers, build your squad, and dominate the pitch. A pixel art card game on the Solana blockchain.",
+    ? "Agents Cup early access — connect with X, claim your pack, drop your wallet."
+    : "Collect AI Agent footballers, build your squad, and dominate the pitch. A pixel art card game on Base.",
 };
 
 export default async function RootLayout({
@@ -65,11 +70,11 @@ export default async function RootLayout({
           // Bypass routes render bare — they provide their own chrome.
           <main className="flex-1">{children}</main>
         ) : (
-          <WalletProvider>
+          <ClientWalletBoundary>
             <Navbar />
             <main className="flex-1">{children}</main>
             <Footer />
-          </WalletProvider>
+          </ClientWalletBoundary>
         )}
       </body>
     </html>

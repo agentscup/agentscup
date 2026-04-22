@@ -17,15 +17,25 @@ interface LeaderboardRow {
 }
 
 interface Props {
-  /** How many rows to fetch/show. */
+  /** Maximum rows to fetch from the server. The leaderboard API
+   *  clamps this to 100. Server-side cache is per-limit so two
+   *  callers with different limits live in different cache slots. */
   limit?: number;
   /** Highlight the row matching this handle (the signed-in user's own rank). */
   highlightHandle?: string;
   /** Compact dense variant — avatars 28px, tighter padding. Used on
-   *  the landing preview. */
+   *  the landing preview. Also disables the LOAD MORE button
+   *  (compact is meant to be a short teaser). */
   compact?: boolean;
   /** Show a small header with the total count. */
   showHeader?: boolean;
+  /** How many rows to render on first paint. If fewer than the
+   *  fetched length, a LOAD MORE button appears and reveals the
+   *  rest in steps. Defaults to `limit` (show everything) so
+   *  existing call sites keep their old behaviour. */
+  initialVisible?: number;
+  /** How many rows LOAD MORE reveals per click. */
+  loadMoreStep?: number;
 }
 
 const RARITY_COLORS: Record<Rarity, string> = {
@@ -40,25 +50,50 @@ export default function Leaderboard({
   highlightHandle,
   compact = false,
   showHeader = true,
+  initialVisible,
+  loadMoreStep = 20,
 }: Props) {
   const [rows, setRows] = useState<LeaderboardRow[] | null>(null);
   const [total, setTotal] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  // How many rows the user has expanded to. Starts at
+  // `initialVisible ?? limit` and grows by loadMoreStep per click
+  // until it meets the fetched row count. Compact variant used to
+  // skip the LOAD MORE entirely (teaser intent) but that left the
+  // landing / mobile leaderboard stuck at 5 rows even when players
+  // wanted to scroll further — so compact now honours the same
+  // initialVisible + loadMoreStep knobs, just with tighter row
+  // styling.
+  const initialCount = initialVisible ?? limit;
+  const [visible, setVisible] = useState(initialCount);
 
   useEffect(() => {
     let cancelled = false;
-    fetch(`/api/early-access/leaderboard?limit=${limit}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data: { rows?: LeaderboardRow[]; total?: number } | null) => {
-        if (cancelled) return;
-        setRows(data?.rows ?? []);
-        setTotal(data?.total ?? 0);
-      })
-      .catch(() => {
-        if (!cancelled) setError("Could not load leaderboard");
-      });
+
+    // Initial fetch + polling. The endpoint is CDN-cached at ~10s
+    // so a 15s client-side poll lands mostly on cache hits and keeps
+    // every tab on the page in sync with newly claimed cards without
+    // hammering the DB. Append a timestamp param so the browser's
+    // own http cache doesn't dedup on the URL.
+    const load = () => {
+      fetch(`/api/early-access/leaderboard?limit=${limit}&_t=${Date.now()}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data: { rows?: LeaderboardRow[]; total?: number } | null) => {
+          if (cancelled) return;
+          setRows(data?.rows ?? []);
+          setTotal(data?.total ?? 0);
+        })
+        .catch(() => {
+          if (!cancelled) setError("Could not load leaderboard");
+        });
+    };
+
+    load();
+    const id = setInterval(load, 15_000);
+
     return () => {
       cancelled = true;
+      clearInterval(id);
     };
   }, [limit]);
 
@@ -104,7 +139,7 @@ export default function Leaderboard({
               NO CLAIMS YET — BE THE FIRST
             </div>
           )
-          : rows.map((row) => (
+          : rows.slice(0, visible).map((row) => (
               <Row
                 key={row.handle}
                 row={row}
@@ -115,6 +150,27 @@ export default function Leaderboard({
               />
             ))}
       </div>
+
+      {/* LOAD MORE — shows whenever there are more rows than
+          currently visible, regardless of compact. One click reveals
+          the next `loadMoreStep` rows; auto-hides when everything
+          fetched is shown. */}
+      {rows && rows.length > visible && (
+        <button
+          onClick={() =>
+            setVisible((v) => Math.min(rows.length, v + loadMoreStep))
+          }
+          className="w-full mt-3 py-3 font-pixel text-[8px] text-white/70 tracking-[0.3em] transition-colors hover:text-white"
+          style={{
+            background: "rgba(10,20,10,0.5)",
+            border: "1px solid rgba(255,255,255,0.08)",
+            borderLeftWidth: "3px",
+            borderLeftColor: "#1E8F4E",
+          }}
+        >
+          LOAD MORE ({rows.length - visible} MORE)
+        </button>
+      )}
 
       <style jsx>{`
         @keyframes fade-up {

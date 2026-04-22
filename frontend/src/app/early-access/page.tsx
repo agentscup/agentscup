@@ -30,9 +30,10 @@ type Phase =
   | "claimed";
 
 const EMPTY_TASKS: TaskState = {
-  notificationsOn: false,
-  likePinned: false,
-  replyPinned: false,
+  follow: false,
+  like: false,
+  retweet: false,
+  reply: false,
 };
 
 const LS_KEYS = {
@@ -112,9 +113,10 @@ export default function EarlyAccessPage() {
             if (data.claimId) setClaimId(data.claimId);
             if (data.tasks) {
               setTasks({
-                notificationsOn: !!data.tasks.notificationsOn,
-                likePinned: !!data.tasks.likePinned,
-                replyPinned: !!data.tasks.replyPinned,
+                follow: !!data.tasks.follow,
+                like: !!data.tasks.like,
+                retweet: !!data.tasks.retweet,
+                reply: !!data.tasks.reply,
               });
             }
             setPhase(data.status === "claimed" ? "claimed" : "revealed");
@@ -287,7 +289,16 @@ export default function EarlyAccessPage() {
               signInWith={oauthAvailable ? <SignInWithX /> : null}
             />
             <div className="max-w-[460px] mx-auto w-full mt-4">
-              <Leaderboard limit={5} compact />
+              {/* Landing / pre-claim preview — compact row styling
+                  for dense mobile rendering, but fetches the full
+                  100 so players can expand past the initial teaser
+                  via LOAD MORE instead of being stuck at 5. */}
+              <Leaderboard
+                limit={100}
+                initialVisible={10}
+                loadMoreStep={20}
+                compact
+              />
             </div>
           </>
         )}
@@ -344,7 +355,16 @@ export default function EarlyAccessPage() {
 
             {phase === "claimed" && (
               <div className="max-w-[520px] mx-auto w-full mt-4">
-                <Leaderboard limit={20} highlightHandle={card.handle} />
+                {/* Top 100 leaderboard — initial 20 rows render fast,
+                    LOAD MORE reveals the rest in 20-row steps so
+                    mobile scroll stays manageable and the user can
+                    expand to see everyone below them. */}
+                <Leaderboard
+                  limit={100}
+                  initialVisible={20}
+                  loadMoreStep={20}
+                  highlightHandle={card.handle}
+                />
               </div>
             )}
           </div>

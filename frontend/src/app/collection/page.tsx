@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
-import { useWallet } from "@solana/wallet-adapter-react";
+import { useAccount } from "wagmi";
 import dynamic from "next/dynamic";
 import AgentCard from "@/components/cards/AgentCard";
 
@@ -24,7 +24,7 @@ const SORT_OPTIONS = [
 const rarityOrder: Record<string, number> = { legendary: 4, epic: 3, rare: 2, common: 1 };
 
 export default function CollectionPage() {
-  const { publicKey } = useWallet();
+  const { address } = useAccount();
   const [agents, setAgents] = useState<Agent[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
@@ -34,19 +34,19 @@ export default function CollectionPage() {
   const [sort, setSort] = useState("rating-desc");
 
   useEffect(() => {
-    if (!publicKey) {
+    if (!address) {
       setAgents([]);
       return;
     }
     setLoading(true);
-    getUser(publicKey.toBase58())
+    getUser(address.toLowerCase())
       .then((data: unknown) => {
         const userData = data as { agents?: DbUserAgent[] };
         setAgents(mapUserAgents(userData.agents || []));
       })
       .catch(() => setAgents([]))
       .finally(() => setLoading(false));
-  }, [publicKey]);
+  }, [address]);
 
   const filtered = useMemo(() => {
     let items = [...agents];
@@ -132,7 +132,7 @@ export default function CollectionPage() {
       </div>
 
       {/* Grid */}
-      {!publicKey ? (
+      {!address ? (
         <div className="text-center py-20">
           <div className="font-pixel text-2xl text-white/30 mb-4">!</div>
           <h3 className="font-pixel text-[10px] text-white mb-2 tracking-wider">WALLET NOT CONNECTED</h3>
