@@ -21,6 +21,7 @@ import {
   readContract,
   switchChain,
   getChainId,
+  estimateFeesPerGas,
 } from "wagmi/actions";
 import { keccak256, toHex, toBytes, type Hash } from "viem";
 import { base } from "wagmi/chains";
@@ -72,29 +73,82 @@ async function ensureBaseChain(): Promise<void> {
         "Your wallet doesn't have Base configured. Add Base mainnet (chainId 8453, RPC https://mainnet.base.org) and try again."
       );
     }
-    throw new Error(`Failed to switch to Base: ${msg}`);
+    // Any other switchChain failure (including mobile WalletConnect
+    // weirdness where the bridge timed out) — we DON'T throw here.
+    // wagmi's writeContract below carries `chainId: base.id` and
+    // will surface the real problem from inside viem with a more
+    // actionable error string than "switch_chain failed". If the
+    // switch actually worked (common on mobile — the wallet app
+    // confirms in the background even when the RPC response times
+    // out), the subsequent writeContract succeeds.
+    console.warn(`[evm] switchChain soft-failed, continuing: ${msg}`);
+    return;
   }
 
-  // Verification poll — Phantom (and some other multi-chain wallets)
+  // Verification poll — Phantom + mobile WalletConnect sessions can
   // resolve `wallet_switchEthereumChain` before their internal
-  // tx-routing state actually commits to the new chain. wagmi's
-  // `switchChain` promise has already resolved but `getChainId()`
-  // can still return the old id for ~1-3 seconds. If we call
-  // `writeContract` inside that window, the tx gets submitted on
-  // the old chain and the user sees the confusing "Expected 8453,
-  // got 1" error.
+  // tx-routing state actually commits. wagmi's `switchChain`
+  // promise has resolved but `getChainId()` can still return the
+  // old id for several seconds (more on mobile where the wallet
+  // app deep-link round-trip adds latency). If writeContract fires
+  // inside that window, the tx goes to the wrong chain and the
+  // user sees "Expected 8453, got 1".
   //
-  // Poll up to 6 seconds (30 × 200ms). If the state flips to Base
-  // we proceed; otherwise surface a clear message so the user can
-  // manually select Base in their wallet UI.
-  for (let i = 0; i < 30; i++) {
+  // 20 × 400ms = 8s poll. Mobile wallets often take 3-6 s for the
+  // deep-link round-trip; desktop usually flips instantly. After
+  // the timeout we CONTINUE instead of throwing — writeContract's
+  // own chain check is a second line of defense and its error
+  // message is clearer than a generic "didn't commit" string.
+  for (let i = 0; i < 20; i++) {
     if (getChainId(wagmiConfig) === base.id) return;
-    await new Promise((r) => setTimeout(r, 200));
+    await new Promise((r) => setTimeout(r, 400));
   }
-  throw new Error(
-    "Your wallet accepted the network switch but hasn't committed to Base. " +
-    "Open your wallet, manually select Base, then try again."
+  console.warn(
+    "[evm] chain verification poll timed out — letting writeContract arbitrate"
   );
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Fee overrides — fix "network fee unavailable" on mobile wallets
+// ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Estimates EIP-1559 fees via the dApp's own fallback transport and
+ * returns overrides for writeContract. When the wallet is asked to
+ * estimate fees itself (the default path), mobile wallets route fee
+ * queries through the dApp's registered RPC — which is the public
+ * `mainnet.base.org` rate-limited endpoint on free tier. Mobile
+ * carriers share NATs and burst-hit that limit, so `eth_feeHistory`
+ * returns empty and the wallet shows "network fee unavailable".
+ *
+ * By pre-estimating here (via viem's `fallback` transport which
+ * rotates across 5 public RPCs) and passing explicit `maxFeePerGas`
+ * + `maxPriorityFeePerGas` to `writeContract`, the wallet skips its
+ * own estimation and signs with the values we provided.
+ *
+ * Silent failure is fine — if estimation fails (should be rare with
+ * fallback RPCs), we return `{}` and let the wallet estimate as
+ * before. The fallback transport means this is the improvement
+ * path, not a regression.
+ */
+async function computeFeeOverrides(): Promise<{
+  maxFeePerGas?: bigint;
+  maxPriorityFeePerGas?: bigint;
+}> {
+  try {
+    const fees = await estimateFeesPerGas(wagmiConfig, { chainId: base.id });
+    if (fees.maxFeePerGas && fees.maxPriorityFeePerGas) {
+      // 20% buffer for volatile blocks — Base blocks are 2s so price
+      // can move during the wallet approval round-trip on mobile.
+      return {
+        maxFeePerGas: (fees.maxFeePerGas * 12n) / 10n,
+        maxPriorityFeePerGas: (fees.maxPriorityFeePerGas * 12n) / 10n,
+      };
+    }
+  } catch (err) {
+    console.warn("[evm] fee estimation failed, falling back to wallet:", err);
+  }
+  return {};
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -134,6 +188,7 @@ export async function buyPack(
   assertContract("packStore");
   await ensureBaseChain();
   const requestId = randomBytes32();
+  const feeOverrides = await computeFeeOverrides();
 
   const hash = await writeContract(wagmiConfig, {
     chainId: base.id,
@@ -142,6 +197,7 @@ export async function buyPack(
     functionName: "buyPack",
     args: [packTier, requestId],
     value: priceWei,
+    ...feeOverrides,
   });
   await waitForTransactionReceipt(wagmiConfig, {
     chainId: base.id,
@@ -168,12 +224,14 @@ export async function listAgentOnChain(args: {
 }): Promise<Hash> {
   assertContract("marketplace");
   await ensureBaseChain();
+  const feeOverrides = await computeFeeOverrides();
   const hash = await writeContract(wagmiConfig, {
     chainId: base.id,
     address: CONTRACT_ADDRESSES.marketplace,
     abi: AgentsCupMarketplaceAbi,
     functionName: "listAgent",
     args: [args.listingId, args.agentId, args.priceWei, args.ttlSeconds],
+    ...feeOverrides,
   });
   await waitForTransactionReceipt(wagmiConfig, {
     chainId: base.id,
@@ -190,6 +248,7 @@ export async function buyAgentOnChain(
 ): Promise<Hash> {
   assertContract("marketplace");
   await ensureBaseChain();
+  const feeOverrides = await computeFeeOverrides();
   const hash = await writeContract(wagmiConfig, {
     chainId: base.id,
     address: CONTRACT_ADDRESSES.marketplace,
@@ -197,6 +256,7 @@ export async function buyAgentOnChain(
     functionName: "buyAgent",
     args: [listingIdHex],
     value: priceWei,
+    ...feeOverrides,
   });
   await waitForTransactionReceipt(wagmiConfig, {
     chainId: base.id,
@@ -212,12 +272,14 @@ export async function cancelListingOnChain(
 ): Promise<Hash> {
   assertContract("marketplace");
   await ensureBaseChain();
+  const feeOverrides = await computeFeeOverrides();
   const hash = await writeContract(wagmiConfig, {
     chainId: base.id,
     address: CONTRACT_ADDRESSES.marketplace,
     abi: AgentsCupMarketplaceAbi,
     functionName: "cancelListing",
     args: [listingIdHex],
+    ...feeOverrides,
   });
   await waitForTransactionReceipt(wagmiConfig, {
     chainId: base.id,
@@ -243,6 +305,7 @@ export async function depositMatchEntry(
   assertContract("matchEscrow");
   await ensureBaseChain();
   const matchId = randomBytes32();
+  const feeOverrides = await computeFeeOverrides();
   const hash = await writeContract(wagmiConfig, {
     chainId: base.id,
     address: CONTRACT_ADDRESSES.matchEscrow,
@@ -250,6 +313,7 @@ export async function depositMatchEntry(
     functionName: "depositEntry",
     args: [matchId, 0],
     value: entryFeeWei,
+    ...feeOverrides,
   });
   await waitForTransactionReceipt(wagmiConfig, {
     chainId: base.id,

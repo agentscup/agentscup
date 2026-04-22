@@ -1,10 +1,12 @@
 "use client";
 
-import { createConfig, http } from "wagmi";
+import { createConfig } from "wagmi";
+import { http, fallback } from "viem";
 import { base } from "wagmi/chains";
 import {
+  baseAccount,        // Base Smart Account — Base-native connector
   metaMaskWallet,
-  coinbaseWallet,
+  coinbaseWallet,     // @deprecated upstream but keep for users with older Coinbase Wallet app
   rainbowWallet,
   walletConnectWallet,
   injectedWallet,
@@ -15,6 +17,19 @@ import {
   braveWallet,
   safeWallet,
   ledgerWallet,
+  // Popular on Base / mobile exchanges — iPhone users live in these
+  binanceWallet,
+  bybitWallet,
+  bitgetWallet,
+  uniswapWallet,
+  zerionWallet,
+  imTokenWallet,
+  tokenPocketWallet,
+  gateWallet,
+  krakenWallet,
+  magicEdenWallet,
+  safepalWallet,
+  frontierWallet,
 } from "@rainbow-me/rainbowkit/wallets";
 import { connectorsForWallets } from "@rainbow-me/rainbowkit";
 
@@ -34,26 +49,43 @@ import { connectorsForWallets } from "@rainbow-me/rainbowkit";
 const WALLET_CONNECT_PROJECT_ID =
   process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID ?? "";
 
-// Wallet list is organised into two groups so the RainbowKit modal
-// shows the Base-native ones first (Coinbase Wallet = Base Wallet +
-// Smart Wallet under the hood) and surfaces the rest under a "More"
-// section for players who already use a different extension on
-// desktop or a specific mobile wallet app.
+// iPhone mobile-wallet debugging history:
+//   Symptom  — ConnectButton modal opens but "What is a Wallet?" text
+//              shows and nothing connects; wallet list is empty or
+//              the few entries don't deep-link the installed app.
+//   Root    1. RainbowKit 2.2.10 deprecated `coinbaseWallet` in favour
+//              of `baseAccount` (Base's own Smart Account flow). Listing
+//              only the deprecated connector means iOS Coinbase-Wallet
+//              users hit the stale Coinbase SDK path, which has known
+//              iOS 17+ universal-link bugs.
+//           2. WalletConnect Cloud project ID must whitelist every
+//              origin we serve from — agentscup.com, www.agentscup.com
+//              and play.agentscup.com. Un-whitelisted origins silently
+//              fail the session handshake on mobile only (desktop
+//              forgives it).
+//           3. The mobile wallet picker needs enough entries that the
+//              user's installed wallet is actually in the list. A
+//              terse 5-wallet list makes the modal look empty and
+//              nudges users to scan QR via WalletConnect, which Safari
+//              treats as a cross-app jump and often fails to route
+//              back after approval.
 //
-//   "Popular on Base" group — the wallets Base users most commonly
-//   reach for: Base App (Coinbase Wallet), MetaMask, Rainbow, Phantom
-//   (supports EVM since 2024), Rabby (power-user browser wallet).
-//
-//   "More" group — WalletConnect as the universal fallback, plus
-//   Trust / OKX for mobile users, Brave / Ledger / Safe / injected
-//   as edge-case coverage. Anything not in this list can still reach
-//   the app via WalletConnect scan.
+// Fix:
+//   - Promote `baseAccount` to the top of "Popular on Base" so every
+//     Coinbase / Base-app user gets the native flow.
+//   - Keep `coinbaseWallet` one slot lower as a compatibility entry
+//     for users with an older Coinbase Wallet app install.
+//   - Expand the "More" list with every iPhone-native wallet commonly
+//     used on Base — Binance/Bybit/Bitget/OKX for exchange wallets,
+//     Uniswap/Zerion/Rainbow for DeFi natives, imToken/TokenPocket/
+//     Trust/SafePal for APAC users, Kraken/Gemini/Frontier for US.
 const connectors = connectorsForWallets(
   [
     {
       groupName: "Popular on Base",
       wallets: [
-        coinbaseWallet,   // Base Wallet / Coinbase Smart Wallet
+        baseAccount,       // Base Smart Account — use this first on Base
+        coinbaseWallet,    // Legacy Coinbase Wallet extension users
         metaMaskWallet,
         rainbowWallet,
         phantomWallet,
@@ -61,11 +93,33 @@ const connectors = connectorsForWallets(
       ],
     },
     {
+      groupName: "Mobile exchanges",
+      wallets: [
+        binanceWallet,
+        bybitWallet,
+        bitgetWallet,
+        okxWallet,
+        gateWallet,
+        krakenWallet,
+      ],
+    },
+    {
+      groupName: "DeFi wallets",
+      wallets: [
+        uniswapWallet,
+        zerionWallet,
+        trustWallet,
+        imTokenWallet,
+        tokenPocketWallet,
+        safepalWallet,
+        magicEdenWallet,
+        frontierWallet,
+      ],
+    },
+    {
       groupName: "More",
       wallets: [
-        walletConnectWallet, // scan-to-connect for every other wallet
-        trustWallet,
-        okxWallet,
+        walletConnectWallet, // scan-to-connect fallback for any wallet not listed
         braveWallet,
         ledgerWallet,
         safeWallet,
@@ -79,13 +133,40 @@ const connectors = connectorsForWallets(
   }
 );
 
-const baseRpc = process.env.NEXT_PUBLIC_BASE_RPC_URL || "https://mainnet.base.org";
+// Multiple RPC endpoints with failover. Public `mainnet.base.org`
+// rate-limits fee endpoints hard on mobile networks (shared-IP NATs
+// at carriers), which surfaces as "network fee unavailable" in the
+// wallet UI during a pack purchase. `fallback` with `rank: true`
+// rotates to a healthy endpoint automatically when any one starts
+// 429-ing, and re-ranks by latency so the fastest stays primary.
+// Env override is first so prod can pin a paid Alchemy/QuickNode key.
+const BASE_RPCS = [
+  process.env.NEXT_PUBLIC_BASE_RPC_URL,
+  "https://mainnet.base.org",
+  "https://base.llamarpc.com",
+  "https://base.publicnode.com",
+  "https://1rpc.io/base",
+  "https://base.meowrpc.com",
+].filter((u): u is string => typeof u === "string" && u.length > 0);
+
+const UNIQUE_BASE_RPCS = [...new Set(BASE_RPCS)];
+
+const baseTransport = fallback(
+  UNIQUE_BASE_RPCS.map((url) =>
+    http(url, {
+      retryCount: 2,
+      retryDelay: 200,
+      timeout: 10_000,
+    })
+  ),
+  { rank: true }
+);
 
 export const wagmiConfig = createConfig({
   chains: [base],
   connectors,
   transports: {
-    [base.id]: http(baseRpc),
+    [base.id]: baseTransport,
   },
   ssr: true,
 });
