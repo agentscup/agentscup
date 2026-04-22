@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { useAccount } from "wagmi";
+import { useAccount, useChainId } from "wagmi";
+import { base } from "wagmi/chains";
 import { PACK_TYPES } from "@/data/agents";
 import { Agent, PackType } from "@/types";
 import { getRarityColor } from "@/lib/utils";
@@ -82,7 +83,8 @@ function PackCard({ pack, onBuy, disabled }: { pack: PackType; onBuy: () => void
 }
 
 export default function PacksPage() {
-  const { address } = useAccount();
+  const { address, isConnected } = useAccount();
+  const currentChainId = useChainId();
   const [openedCards, setOpenedCards] = useState<Agent[]>([]);
   const [revealIndex, setRevealIndex] = useState(-1);
   const [isOpening, setIsOpening] = useState(false);
@@ -119,7 +121,12 @@ export default function PacksPage() {
   }
 
   async function handleBuy(pack: PackType) {
-    if (!address) return;
+    if (!address || !isConnected) {
+      setError(
+        "Wallet isn't connected. Tap Connect at the top, approve in your wallet, then try again."
+      );
+      return;
+    }
     setError(null);
     setBuying(true);
 
@@ -142,14 +149,22 @@ export default function PacksPage() {
     } catch (err: unknown) {
       let msg = err instanceof Error ? err.message : "Failed to open pack";
 
-      // Friendlier errors for common wallet / chain issues
+      // Friendlier errors for common wallet / chain issues.
       const lc = msg.toLowerCase();
       if (lc.includes("insufficient funds") || lc.includes("exceeds the balance")) {
-        msg = `Insufficient ETH balance. You need ${pack.priceEth} ETH (plus a little for gas) to buy this pack.`;
+        msg = `Not enough ETH for ${pack.priceEth} ETH + gas. Top up your wallet on Base and try again.`;
       } else if (lc.includes("user rejected") || lc.includes("user denied")) {
         msg = "Transaction rejected in wallet.";
-      } else if (lc.includes("chain") && lc.includes("mismatch")) {
-        msg = "Wrong network — switch your wallet to Base.";
+      } else if (
+        (lc.includes("chain") && (lc.includes("mismatch") || lc.includes("does not match"))) ||
+        lc.includes("wrong network") ||
+        lc.includes("expected chain")
+      ) {
+        msg = "Your wallet is still on the old network. Open your wallet, switch to Base, and tap BUY again.";
+      } else if (lc.includes("timeout") || lc.includes("timed out")) {
+        msg = "Wallet took too long to respond. Reopen your wallet app and try again.";
+      } else if (lc.includes("session") || lc.includes("walletconnect")) {
+        msg = "Wallet session dropped. Reconnect your wallet from the Connect button and try again.";
       }
 
       if (pendingTx.current) {
@@ -183,6 +198,29 @@ export default function PacksPage() {
         <div className="pixel-card p-3 mb-6 text-center" style={{ borderColor: pendingTx.current ? "#eab308" : "#ef4444" }}>
           <p className="font-pixel text-[7px] tracking-wider" style={{ color: pendingTx.current ? "#eab308" : "#ef4444" }}>
             {error}
+          </p>
+        </div>
+      )}
+
+      {/* Wrong-network banner — fires when the wallet is connected
+          but sitting on a non-Base chain (Ethereum mainnet is the
+          default mobile-wallet state for users who just installed
+          MetaMask). Catches the silent majority who would tap BUY
+          and get a scary signing popup on the wrong chain. */}
+      {isConnected && currentChainId && currentChainId !== base.id && (
+        <div
+          className="mb-6 text-center px-4 py-3"
+          style={{
+            background: "rgba(255,215,0,0.08)",
+            border: "2px solid rgba(255,215,0,0.45)",
+            boxShadow: "inset -2px -2px 0 rgba(139,113,0,0.3), inset 2px 2px 0 rgba(255,244,176,0.2)",
+          }}
+        >
+          <p className="font-pixel text-[8px] text-[#FFD700] tracking-wider mb-1">
+            WRONG NETWORK
+          </p>
+          <p className="text-[11px] text-white/70 leading-relaxed">
+            Your wallet is on a different chain. Open your wallet app and switch to <b>Base</b> before buying. On mobile, tap BUY and approve the switch prompt in your wallet, then tap BUY again.
           </p>
         </div>
       )}

@@ -111,8 +111,14 @@ export default function MarketplacePage() {
   const [buyError, setBuyError] = useState<string | null>(null);
   const pendingBuy = useRef<PendingBuy | null>(null);
 
-  // Stats
-  const [stats, setStats] = useState({ activeListings: 0, totalTrades: 0, totalVolume: 0, floorPrice: 0 });
+  // Stats — totalVolume and floorPrice arrive as wei strings to
+  // survive BigInt precision; kept as-is until the render step.
+  const [stats, setStats] = useState<{
+    activeListings: number;
+    totalTrades: number;
+    totalVolume: string | number;
+    floorPrice: string | number;
+  }>({ activeListings: 0, totalTrades: 0, totalVolume: "0", floorPrice: "0" });
 
   // History
   const [history, setHistory] = useState<TradeHistoryRow[]>([]);
@@ -443,12 +449,16 @@ export default function MarketplacePage() {
           </div>
           <div className="text-center">
             <div className="font-pixel text-[6px] text-white/40 tracking-wider mb-1">VOLUME</div>
-            <div className="font-pixel text-[10px] text-[#FFD700]">{formatEth(BigInt(stats.totalVolume || 0))} ETH</div>
+            <div className="font-pixel text-[10px] text-[#FFD700]">
+              {formatEth(BigInt(stats.totalVolume || 0))} ETH
+            </div>
           </div>
           <div className="text-center">
             <div className="font-pixel text-[6px] text-white/40 tracking-wider mb-1">FLOOR</div>
             <div className="font-pixel text-[10px] text-[#00E5FF]">
-              {stats.floorPrice > 0 ? `${formatEth(BigInt(stats.floorPrice))} ETH` : "—"}
+              {BigInt(stats.floorPrice || 0) > 0n
+                ? `${formatEth(BigInt(stats.floorPrice))} ETH`
+                : "—"}
             </div>
           </div>
         </div>

@@ -11,10 +11,22 @@ interface Props {
   signInWith?: ReactNode | null;
 }
 
+// Shown as a subtitle under the "trouble connecting?" toggle on
+// desktop. Keep it short — the real copy lives in _EXPANDED below.
 const OAUTH_TROUBLE_DEFAULT =
-  "Android + X app installed? Tap below to enter manually.";
+  "X blocked in your country or stuck on Android? Enter your handle directly below.";
+// Full explanation when the user expands the fallback. Covers both
+// buckets of users who can't complete X OAuth:
+//   1. X is blocked/throttled at their ISP (Iran, mainland China,
+//      Russia, Myanmar, Turkmenistan, etc.) — the OAuth URL itself
+//      times out.
+//   2. Android users with the X app installed — X's own deep link
+//      handler intercepts the OAuth URL and dead-ends before the
+//      authorize dialog.
+// Either way the handle-entry path lets them claim, and we verify
+// their share tweet asynchronously.
 const OAUTH_TROUBLE_EXPANDED =
-  "The X Android app intercepts its own OAuth links and gets stuck before showing the login dialog. We'll accept your handle directly and verify your share tweet later.";
+  "If X is blocked in your country, or the X Android app keeps breaking the login link, enter your handle manually below. We'll accept it and verify your share tweet once it lands.";
 
 /**
  * Refined hero — single focal point, generous whitespace, no

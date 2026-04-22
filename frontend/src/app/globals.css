@@ -342,115 +342,31 @@ h1, h2, h3, h4, h5, h6 {
   color: #ffffff;
 }
 
-/* ── RainbowKit ConnectButton — pixel theme override ─── */
-.wallet-btn-wrapper .wallet-adapter-button {
-  font-family: var(--font-pixel) !important;
-  font-size: 7px !important;
-  letter-spacing: 1px !important;
-  padding: 8px 16px !important;
-  height: auto !important;
-  line-height: 1.4 !important;
-  border-radius: 0 !important;
-  background: #1E8F4E !important;
-  color: #050e05 !important;
-  box-shadow: inset -3px -3px 0 #0B6623, inset 3px 3px 0 #2eb060, 0 3px 0 0 #084a18 !important;
-  transition: all 0.1s !important;
+/* ── RainbowKit ConnectButton wrapper ─────────────────────────
+ *
+ * The original overrides in this block targeted
+ * `.wallet-adapter-*` classes left over from the Solana
+ * wallet-adapter library we no longer use. RainbowKit doesn't emit
+ * those classes — its button lives in a Shadow-DOM-like scope under
+ * `[data-rk]` — so the old rules did nothing on desktop and worse:
+ * their `!important` flex / padding combinations collided with
+ * RainbowKit's own mobile layout and made the button render cropped
+ * or overflowing on small screens. Relying on RainbowKit defaults
+ * fixes the mobile visual breakage without sacrificing desktop.
+ *
+ * Keep only minimal wrapper rules — full-width on mobile and tight
+ * center alignment in the hamburger menu. Actual button styling
+ * comes from RainbowKit's `darkTheme` config in WalletProvider.
+ */
+.wallet-btn-mobile {
+  width: 100%;
+  display: flex;
+  justify-content: center;
 }
 
-.wallet-btn-wrapper .wallet-adapter-button:hover {
-  background: #2eb060 !important;
-}
-
-.wallet-btn-wrapper .wallet-adapter-button-trigger {
-  background: #1E8F4E !important;
-}
-
-.wallet-btn-wrapper .wallet-adapter-button i,
-.wallet-btn-wrapper .wallet-adapter-button .wallet-adapter-button-start-icon {
-  width: 16px !important;
-  height: 16px !important;
-  margin-right: 6px !important;
-}
-
-/* Connected state */
-.wallet-btn-wrapper .wallet-adapter-button:not(.wallet-adapter-button-trigger) {
-  background: transparent !important;
-  border: 2px solid rgba(255,255,255,0.3) !important;
-  color: #fff !important;
-  box-shadow: inset -2px -2px 0 rgba(255,255,255,0.1), inset 2px 2px 0 rgba(255,255,255,0.2) !important;
-}
-
-.wallet-btn-wrapper .wallet-adapter-button:not(.wallet-adapter-button-trigger):hover {
-  border-color: rgba(255,255,255,0.5) !important;
-  background: rgba(255,255,255,0.05) !important;
-}
-
-/* Mobile full-width */
-.wallet-btn-mobile .wallet-adapter-button {
-  width: 100% !important;
-  justify-content: center !important;
-}
-
-/* Wallet modal — dark pixel theme */
-.wallet-adapter-modal-wrapper {
-  background: #0a1e0a !important;
-  border: 3px solid #1E8F4E !important;
-  box-shadow: 0 0 60px rgba(30,143,78,0.3), inset -3px -3px 0 #0B6623, inset 3px 3px 0 #2eb060 !important;
-  border-radius: 0 !important;
-}
-
-.wallet-adapter-modal-title {
-  font-family: var(--font-pixel) !important;
-  font-size: 10px !important;
-  letter-spacing: 2px !important;
-  color: #fff !important;
-}
-
-.wallet-adapter-modal-list li {
-  border-radius: 0 !important;
-}
-
-.wallet-adapter-modal-list .wallet-adapter-button {
-  font-family: var(--font-pixel) !important;
-  font-size: 8px !important;
-  border-radius: 0 !important;
-  background: #0f2a0f !important;
-  border: 2px solid #1a3a1a !important;
-  color: #fff !important;
-  padding: 12px !important;
-}
-
-.wallet-adapter-modal-list .wallet-adapter-button:hover {
-  background: #1a3a1a !important;
-  border-color: #1E8F4E !important;
-}
-
-.wallet-adapter-modal-button-close {
-  background: transparent !important;
-  color: #fff !important;
-}
-
-.wallet-adapter-modal-overlay {
-  background: rgba(0,0,0,0.8) !important;
-}
-
-/* Dropdown menu (disconnect etc) */
-.wallet-adapter-dropdown-list {
-  background: #0a1e0a !important;
-  border: 2px solid #1a3a1a !important;
-  border-radius: 0 !important;
-  box-shadow: 4px 4px 0 rgba(0,0,0,0.5) !important;
-}
-
-.wallet-adapter-dropdown-list-item {
-  font-family: var(--font-pixel) !important;
-  font-size: 7px !important;
-  color: #fff !important;
-  border-radius: 0 !important;
-}
-
-.wallet-adapter-dropdown-list-item:hover {
-  background: #1a3a1a !important;
+.wallet-btn-mobile [data-rk] button {
+  width: 100%;
+  min-height: 44px;
 }
 
 /* ═════════════════════════════════════════════════════════════════
@@ -480,19 +396,25 @@ h1, h2, h3, h4, h5, h6 {
  *      with overflow-x: hidden on <body>.
  */
 
-html,
+/* Only the body gets overflow-x hidden. Applying it to <html> too
+ * causes iOS Safari to mis-calculate the containing block for
+ * fixed-position modals — the wallet picker renders skewed /
+ * offset ("yamuk") on iPhone. Single-element clamp is enough to
+ * stop horizontal scroll from stray wide elements. */
 body {
   overflow-x: hidden;
 }
 
 /* iPhone safe-area padding — adds a little breathing room around
- * the notch / home-indicator strip on modern iPhones. The env()
- * values return 0 on browsers that don't support them, so this is
- * progressive enhancement. */
+ * the notch / home-indicator strip on modern iPhones. Pair with
+ * viewport-fit: cover in layout.tsx so the insets actually resolve
+ * to non-zero values. env() is progressive enhancement; older
+ * Androids get 0 and a normal layout. */
 @supports (padding: env(safe-area-inset-top)) {
   body {
     padding-left: env(safe-area-inset-left);
     padding-right: env(safe-area-inset-right);
+    padding-bottom: env(safe-area-inset-bottom);
   }
 }
 
@@ -528,15 +450,14 @@ body {
     min-height: 44px;
   }
 
-  /* Wallet modal — RainbowKit's default width is 360px which is
-   * wider than the narrowest phones (320px) and pushes content
-   * off-screen. Clamp it to the viewport minus a margin and cap
-   * the height so the wallet list scrolls inside the modal
-   * instead of pushing the connect button below the fold. */
-  [data-rk] div[role="dialog"] {
-    max-width: calc(100vw - 16px) !important;
-    max-height: calc(100dvh - 32px) !important;
-  }
+  /* Wallet modal — leave RainbowKit's own responsive sizing alone.
+   *
+   * The previous override clamped max-width to calc(100vw - 16px)
+   * which collided with RainbowKit's internal flex layout on
+   * narrow iPhones and caused the wallet list panel to be clipped
+   * off-screen, leaving only the "What is a Wallet?" help panel
+   * visible. The default RainbowKit mobile bottom-sheet already
+   * fits the viewport correctly; we just need to NOT fight it. */
 
   /* Tighten home page hero vertical rhythm — the trophy svg plus
    * the two CTAs don't need the 16 rem of top padding from the

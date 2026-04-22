@@ -154,8 +154,11 @@ export async function getListings() {
 export async function getMarketplaceStats(): Promise<{
   activeListings: number;
   totalTrades: number;
-  totalVolume: number;
-  floorPrice: number;
+  // Backend returns these as wei strings so BigInt parsing is safe
+  // for prices above 2^53 (any ETH listing >= ~0.009 ETH). Legacy
+  // responses may still return numbers — callers treat both shapes.
+  totalVolume: string | number;
+  floorPrice: string | number;
 }> {
   return request("/marketplace/stats");
 }

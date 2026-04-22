@@ -83,6 +83,11 @@ export default function WalletProvider({ children }: { children: ReactNode }) {
             borderRadius: "small",
             fontStack: "system",
           })}
+          // Keep `compact` — `wide` splits the modal into two panels
+          // (help on left, wallet list on right) which clips the right
+          // panel off-screen on narrow mobile viewports, leaving only
+          // the "What is a Wallet?" text visible. Compact renders the
+          // wallet list as the primary view on every screen size.
           modalSize="compact"
           showRecentTransactions={true}
         >

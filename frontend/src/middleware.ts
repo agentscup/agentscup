@@ -19,18 +19,30 @@ import type { NextRequest } from "next/server";
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Root-path redirect to /early-access — only fires when the site
-  // is in maintenance mode. In production agentscup.com runs with
-  // NEXT_PUBLIC_MAINTENANCE_MODE=true so the root is the early-
-  // access landing. In local dev (MAINTENANCE_MODE=false) this is
-  // skipped, so `/` renders the game home page and the game routes
-  // under it are reachable without a manual URL rewrite.
-  const maintenanceOn =
-    process.env.NEXT_PUBLIC_MAINTENANCE_MODE === "true";
-  if (pathname === "/" && maintenanceOn) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/early-access";
-    return NextResponse.redirect(url, { status: 307 });
+  // Launch day: agentscup.com / www.agentscup.com and every
+  // early-access URL 307 forward to play.agentscup.com — the game
+  // is live, the campaign funnel is done. External 307 (not a
+  // same-host rewrite) so the address bar flips to play.agentscup.com
+  // and any deep-linked tweet / share URL re-resolves into the game.
+  const host = (request.headers.get("host") ?? "").toLowerCase();
+  const isRootDomain =
+    host === "agentscup.com" || host === "www.agentscup.com";
+
+  if (isRootDomain) {
+    const target = new URL(
+      `https://play.agentscup.com${pathname}${request.nextUrl.search}`
+    );
+    return NextResponse.redirect(target, { status: 307 });
+  }
+
+  if (
+    pathname === "/early-access" ||
+    pathname.startsWith("/early-access/")
+  ) {
+    const target = new URL(
+      `https://play.agentscup.com/${request.nextUrl.search}`
+    );
+    return NextResponse.redirect(target, { status: 307 });
   }
 
   const response = NextResponse.next();

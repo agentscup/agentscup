@@ -73,6 +73,28 @@ export default function EarlyAccessPage() {
   const [card, setCard] = useState<FounderCardT | null>(null);
   const [claimId, setClaimId] = useState<string | null>(null);
   const [restoreChecked, setRestoreChecked] = useState(false);
+  // OAuth error banner — populated when NextAuth redirects here
+  // after a failed X sign-in (rate-limit, ISP block, Samsung
+  // Internet bug, etc. — all the reasons `/api/auth/error` fires).
+  // auth.ts `pages.error` points at this page; we read the query
+  // string once on mount and swap to the handle-entry phase so the
+  // user has a way to continue without restarting.
+  const [oauthError, setOauthError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const qs = new URLSearchParams(window.location.search);
+    const err = qs.get("error");
+    if (err) {
+      setOauthError(err);
+      setPhase("handle");
+      // Strip the param so a refresh doesn't re-show the banner
+      // if the user has already moved past the problem.
+      const url = new URL(window.location.href);
+      url.searchParams.delete("error");
+      window.history.replaceState({}, "", url.toString());
+    }
+  }, []);
 
   // ── Page refresh restore ─────────────────────────────────────────
   // Before we show anything, check if the user already has a reveal
@@ -309,12 +331,33 @@ export default function EarlyAccessPage() {
             through the "trouble connecting?" escape hatch on the
             landing and still complete the flow. */}
         {restoreChecked && phase === "handle" && (
-          <HandleStep
-            onSubmit={(h) => {
-              setHandle(h);
-              setPhase("tasks");
-            }}
-          />
+          <>
+            {oauthError && (
+              <div
+                className="max-w-[420px] mx-auto mb-6 px-4 py-3 text-center"
+                style={{
+                  background: "rgba(255,215,0,0.06)",
+                  border: "1px solid rgba(255,215,0,0.35)",
+                  borderRadius: "2px",
+                }}
+              >
+                <div className="font-pixel text-[8px] tracking-[0.3em] text-[#FFD700] mb-1">
+                  X SIGN-IN DIDN&apos;T COMPLETE
+                </div>
+                <p className="text-[11px] text-white/70 leading-relaxed">
+                  We couldn&apos;t finish the X handshake — this is usually X
+                  rate-limiting the callback for a few minutes. Enter your
+                  handle below and we&apos;ll verify your share tweet later.
+                </p>
+              </div>
+            )}
+            <HandleStep
+              onSubmit={(h) => {
+                setHandle(h);
+                setPhase("tasks");
+              }}
+            />
+          </>
         )}
 
         {restoreChecked && phase === "loading" && (

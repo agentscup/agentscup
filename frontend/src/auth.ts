@@ -228,5 +228,13 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   pages: {
     // Send users back to the hero rather than Auth.js's default UI.
     signIn: "/early-access",
+    // Custom error page — NextAuth's stock "Server error / this is
+    // a problem with server config" screen is scary and dead-ends
+    // users whose X OAuth round-trip failed (rate-limit on
+    // /2/users/me, X API 5xx, Samsung Internet quirk, ISP-level
+    // block in their country, etc.). Routing back to the landing
+    // lets the page read the `?error=` query and auto-expand the
+    // handle-entry fallback so they can still claim.
+    error: "/early-access",
   },
 });

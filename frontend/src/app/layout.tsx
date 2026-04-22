@@ -5,6 +5,7 @@ import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
 import MaintenanceScreen from "@/components/layout/MaintenanceScreen";
 import ClientWalletBoundary from "@/components/layout/ClientWalletBoundary";
+import InAppBrowserBanner from "@/components/layout/InAppBrowserBanner";
 import "./globals.css";
 
 const MAINTENANCE_MODE = process.env.NEXT_PUBLIC_MAINTENANCE_MODE === "true";
@@ -34,32 +35,59 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 5,
   userScalable: true,
+  // iPhones with notch / Dynamic Island need explicit viewport-fit
+  // cover so our env(safe-area-inset-*) padding kicks in. Without
+  // this, iOS Safari clamps the viewport to the visible area and
+  // fixed-position modals (RainbowKit's wallet picker) render with
+  // odd offsets — the "yamuk gibi" skew users saw on iPhone 17.
+  viewportFit: "cover",
 };
 
-export const metadata: Metadata = {
-  // Maintenance mode doubles as the early-access landing window —
-  // the only reachable route is /early-access, so advertise that
-  // in the tab title instead of the generic "Under Maintenance"
-  // copy. Early-access page owns its own `<title>` override if it
-  // wants something richer.
-  title: MAINTENANCE_MODE
-    ? "Agents Cup — Early Access"
-    : "Agents Cup — AI Football Card Game on Base",
-  description: MAINTENANCE_MODE
-    ? "Agents Cup early access — connect with X, claim your pack, drop your wallet."
-    : "Collect AI Agent footballers, build your squad, and dominate the pitch. A pixel art card game on Base.",
-};
+// Metadata is host-aware — during the pre-launch window both
+// agentscup.com (early-access landing) and play.agentscup.com
+// (full game) share a single deployment, so the tab title should
+// match the domain the visitor is on:
+//
+//   agentscup.com / www  → "Agents Cup — Early Access"
+//   play.agentscup.com   → "Agents Cup — AI Football Card Game on Base"
+//
+// After launch day, flipping MAINTENANCE_MODE=false promotes the
+// game title everywhere.
+export async function generateMetadata(): Promise<Metadata> {
+  const host = ((await headers()).get("host") ?? "").toLowerCase();
+  const isRootDomain =
+    host === "agentscup.com" || host === "www.agentscup.com";
+  const stillEarlyAccess = MAINTENANCE_MODE && isRootDomain;
+  return {
+    title: stillEarlyAccess
+      ? "Agents Cup — Early Access"
+      : "Agents Cup — AI Football Card Game on Base",
+    description: stillEarlyAccess
+      ? "Agents Cup early access — connect with X, claim your pack, drop your wallet."
+      : "Collect AI Agent footballers, build your squad, and dominate the pitch. A pixel art card game on Base.",
+  };
+}
 
 export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const pathname = (await headers()).get("x-pathname") ?? "";
+  const h = await headers();
+  const pathname = h.get("x-pathname") ?? "";
+  const host = (h.get("host") ?? "").toLowerCase();
   const bypassMaintenance = MAINTENANCE_BYPASS_PREFIXES.some((p) =>
     pathname.startsWith(p)
   );
-  const showMaintenance = MAINTENANCE_MODE && !bypassMaintenance;
+  // Maintenance screen only takes over the root domain
+  // (agentscup.com / www). play.agentscup.com serves the full game
+  // during the pre-launch window so early testers, investors, and
+  // the marketing team have a live URL to point at without waiting
+  // for the root-domain flip.
+  const isRootDomain =
+    host === "agentscup.com" || host === "www.agentscup.com";
+  const showMaintenance =
+    MAINTENANCE_MODE && !bypassMaintenance && isRootDomain;
 
   return (
     <html lang="en" className={`${pressStart.variable} ${inter.variable} dark`}>
@@ -71,6 +99,7 @@ export default async function RootLayout({
           <main className="flex-1">{children}</main>
         ) : (
           <ClientWalletBoundary>
+            <InAppBrowserBanner />
             <Navbar />
             <main className="flex-1">{children}</main>
             <Footer />

@@ -3,8 +3,9 @@
   "configurations": [
     {
       "name": "frontend-dev",
-      "runtimeExecutable": "bash",
-      "runtimeArgs": ["-c", "cd 'C:/Users/doguk/OneDrive/Desktop/agentscup/frontend' && npm run dev"],
+      "runtimeExecutable": "npm.cmd",
+      "runtimeArgs": ["run", "dev"],
+      "cwd": "C:/Users/doguk/OneDrive/Desktop/agentscup/frontend",
       "port": 3000
     }
   ]
