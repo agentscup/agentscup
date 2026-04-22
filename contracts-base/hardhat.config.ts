@@ -16,6 +16,7 @@ const config: HardhatUserConfig = {
     settings: {
       optimizer: { enabled: true, runs: 200 },
       viaIR: true,
+      evmVersion: "cancun",
     },
   },
   networks: {
@@ -36,6 +37,9 @@ const config: HardhatUserConfig = {
       chainId: 8453,
       accounts: DEPLOYER_PRIVATE_KEY ? [DEPLOYER_PRIVATE_KEY] : [],
     },
+  },
+  sourcify: {
+    enabled: true,
   },
   etherscan: {
     apiKey: {

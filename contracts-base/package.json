@@ -11,12 +11,18 @@
     "deploy:local": "hardhat run scripts/deploy.ts --network localhost",
     "deploy:sepolia": "hardhat run scripts/deploy.ts --network baseSepolia",
     "deploy:base": "hardhat run scripts/deploy.ts --network base",
+    "deploy:cup:base": "hardhat run scripts/deployCupToken.ts --network base",
+    "deploy:cup:sepolia": "hardhat run scripts/deployCupToken.ts --network baseSepolia",
+    "merkle:build": "ts-node scripts/buildMerkleTree.ts",
+    "deploy:merkle:base": "hardhat run scripts/deployMerkleDistributor.ts --network base",
+    "fund:merkle:base": "hardhat run scripts/fundMerkleDistributor.ts --network base",
     "verify:sepolia": "hardhat verify --network baseSepolia",
     "verify:base": "hardhat verify --network base"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
     "@openzeppelin/contracts": "^5.1.0",
+    "@openzeppelin/merkle-tree": "^1.0.8",
     "@types/chai": "^4.3.19",
     "@types/mocha": "^10.0.8",
     "@types/node": "^22.7.5",

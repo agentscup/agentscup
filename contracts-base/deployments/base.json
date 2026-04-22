@@ -1,17 +1,37 @@
 {
   "network": "base",
   "chainId": 8453,
-  "deployer": "0x5A31f465064Cb00a99F0885c480927B5ea906568",
+  "deployer": "0x59A5CBC684BfED4AA83Abce9Ec637c3F2b3634Dc",
   "contracts": {
     "AgentsCupPackStore": "0xD35F2536043786e27453A2A58e084905bd6D0ce2",
     "AgentsCupMarketplace": "0x9983D5c374A656De96804a4195983Fd3021Ea705",
-    "AgentsCupMatchEscrow": "0x98dD410D8D5EcAdf425B118e6BAc1762FE47A20C"
+    "AgentsCupMatchEscrow": "0x98dD410D8D5EcAdf425B118e6BAc1762FE47A20C",
+    "AgentsCupToken": "0x08d1c6b78e8aa80E0C505829C30C0f81F984a668",
+    "CupMerkleDistributor_Main": "0x069B6a593aDb9310DF0B51cD2FA06b0dCf1E3A66",
+    "CupMerkleDistributor_EaBonus": "0x5e5b8F1e570C0db669EE83c6f91b9d144F42097A",
+    "CupClaimRouter": "0x8B4De63B96BA2a103b2925730b65560b05e5f195"
   },
   "config": {
-    "treasury": "0x5A31f465064Cb00a99F0885c480927B5ea906568",
-    "admin": "0x5A31f465064Cb00a99F0885c480927B5ea906568",
-    "feeBps": 250,
-    "matchEntryFee": "0.001 ETH"
+    "treasury": "0x59A5CBC684BfED4AA83Abce9Ec637c3F2b3634Dc",
+    "admin": "0x59A5CBC684BfED4AA83Abce9Ec637c3F2b3634Dc"
   },
-  "deployedAt": "2026-04-22T06:58:16.337Z"
+  "merkle": {
+    "mainRoot": "0xdebf51afd037b543d63ef77342b0c07d3c678f72086c3fa521a60731345eb86b",
+    "eaBonusRoot": "0x6c535a39021a803a65ddafe65657a67e14279a5d7e1a6edae84d80248df93ebf",
+    "claimDeadline": "2026-07-21"
+  },
+  "totals": {
+    "mainPool": "220000000",
+    "eaBonusPool": "80000000",
+    "totalDistributed": "300000000",
+    "mainRecipients": 1819,
+    "eaBonusRecipients": 1216
+  },
+  "claimRouter": {
+    "feeWei": "300000000000000",
+    "feeEth": "0.0003",
+    "treasury": "0x59A5CBC684BfED4AA83Abce9Ec637c3F2b3634Dc",
+    "mainDistributor": "0x069B6a593aDb9310DF0B51cD2FA06b0dCf1E3A66",
+    "bonusDistributor": "0x5e5b8F1e570C0db669EE83c6f91b9d144F42097A"
+  }
 }
