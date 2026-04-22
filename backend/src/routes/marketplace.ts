@@ -115,7 +115,16 @@ router.post("/list", async (req: Request, res: Response) => {
         user_agent_id: userAgentId,
         seller_wallet: walletLower,
         seller_evm_address: walletLower,
-        price_cup: Number(priceWeiNum), // legacy numeric col, holds wei now
+        // IMPORTANT: pass the wei value as a STRING to the numeric
+        // columns, not `Number(bigint)`. JS `Number` only has 53 bits
+        // of integer precision (~9×10^15), and every ETH price above
+        // ~0.009 ETH exceeds that. Passing a lossy float corrupted
+        // the stored price AND overflowed the legacy `numeric(18,0)`
+        // price_cup column for listings ≥ 1 ETH (10^18 wei = 19 digits).
+        // Supabase PostgREST accepts string form for numeric columns
+        // and preserves full precision. Pair this with
+        // base_migration_v3.sql which widens price_cup to numeric(40,0).
+        price_cup: priceWeiNum.toString(),
         price_wei: priceWeiNum.toString(),
         listing_id_hex: listingIdLower,
         listing_type: listingType || "fixed",
@@ -257,10 +266,36 @@ router.get("/stats", async (_req: Request, res: Response) => {
     if (aErr) throw aErr;
 
     const activeCount = active?.length || 0;
-    const priceOf = (l: { price_cup: number | null; price_wei: string | null }) =>
-      Number(l.price_wei ?? l.price_cup ?? 0);
-    const floorPrice =
-      activeCount > 0 ? Math.min(...active!.map(priceOf)) : 0;
+    // BigInt-safe price extraction — wei values for ETH listings
+    // above ~0.009 ETH exceed JS Number's 2^53 precision floor.
+    // Using Number() here would silently round 0.05 ETH listings
+    // (5×10^16 wei) down a few wei, corrupting both the floor and
+    // the volume sum. Supabase returns numeric columns as strings,
+    // so we parse straight into BigInt and only coerce to a JSON-
+    // safe string at the response boundary.
+    const weiOf = (l: {
+      price_cup: string | number | null;
+      price_wei: string | number | null;
+    }): bigint => {
+      const raw = l.price_wei ?? l.price_cup ?? 0;
+      try {
+        // strings parse cleanly; for the legacy number case we cast
+        // via Math.floor to strip a stray decimal before BigInt.
+        if (typeof raw === "number") return BigInt(Math.floor(raw));
+        return BigInt(String(raw).trim() || "0");
+      } catch {
+        return 0n;
+      }
+    };
+
+    let floorWei = 0n;
+    if (active && active.length > 0) {
+      floorWei = weiOf(active[0]);
+      for (let i = 1; i < active.length; i++) {
+        const w = weiOf(active[i]);
+        if (w < floorWei) floorWei = w;
+      }
+    }
 
     const { data: sold, error: sErr } = await supabase
       .from("listings")
@@ -270,13 +305,19 @@ router.get("/stats", async (_req: Request, res: Response) => {
     if (sErr) throw sErr;
 
     const totalTrades = sold?.length || 0;
-    const totalVolume = sold ? sold.reduce((sum, l) => sum + priceOf(l), 0) : 0;
+    let totalVolumeWei = 0n;
+    if (sold) {
+      for (const s of sold) totalVolumeWei += weiOf(s);
+    }
 
     res.json({
       activeListings: activeCount,
       totalTrades,
-      totalVolume: Math.round(totalVolume),
-      floorPrice: Math.round(floorPrice),
+      // Serialise as string — the frontend parses back to BigInt
+      // for formatEth(). JSON numbers can't represent wei amounts
+      // past 2^53 without precision loss.
+      totalVolume: totalVolumeWei.toString(),
+      floorPrice: floorWei.toString(),
     });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "Unknown error";
