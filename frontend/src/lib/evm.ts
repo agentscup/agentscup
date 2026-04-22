@@ -21,7 +21,6 @@ import {
   readContract,
   switchChain,
   getChainId,
-  estimateFeesPerGas,
 } from "wagmi/actions";
 import { keccak256, toHex, toBytes, type Hash } from "viem";
 import { base } from "wagmi/chains";
@@ -113,42 +112,66 @@ async function ensureBaseChain(): Promise<void> {
 // ─────────────────────────────────────────────────────────────────────
 
 /**
- * Estimates EIP-1559 fees via the dApp's own fallback transport and
- * returns overrides for writeContract. When the wallet is asked to
- * estimate fees itself (the default path), mobile wallets route fee
- * queries through the dApp's registered RPC — which is the public
- * `mainnet.base.org` rate-limited endpoint on free tier. Mobile
- * carriers share NATs and burst-hit that limit, so `eth_feeHistory`
- * returns empty and the wallet shows "network fee unavailable".
+ * Computes tight EIP-1559 fee overrides for writeContract, tuned for
+ * Base. Two distinct problems this solves:
  *
- * By pre-estimating here (via viem's `fallback` transport which
- * rotates across 5 public RPCs) and passing explicit `maxFeePerGas`
- * + `maxPriorityFeePerGas` to `writeContract`, the wallet skips its
- * own estimation and signs with the values we provided.
+ *   (a) Mobile wallets surfacing "network fee unavailable" when the
+ *       wallet's own RPC (often the dApp's public RPC) rate-limits
+ *       fee endpoints on carrier NATs. By passing explicit fee
+ *       params, the wallet doesn't have to estimate at all.
  *
- * Silent failure is fine — if estimation fails (should be rare with
- * fallback RPCs), we return `{}` and let the wallet estimate as
- * before. The fallback transport means this is the improvement
- * path, not a regression.
+ *   (b) Wallets over-displaying the fee because viem's default
+ *       `estimateFeesPerGas` on Base returns a 75th-percentile
+ *       priority fee pulled up by MEV bots (~0.1-1 gwei) even
+ *       though organic users need ~0.001 gwei. Wallet UI shows
+ *       `maxFeePerGas × gasLimit` as the scary max → users see
+ *       a $1-5 network fee for a pack buy that should cost pennies.
+ *
+ * Instead of trusting viem's estimator, we read the current
+ * `baseFeePerGas` directly from the latest block and build a tight
+ * EIP-1559 envelope:
+ *
+ *   maxPriorityFeePerGas = 0.001 gwei  (organic Base user tip)
+ *   maxFeePerGas         = baseFee × 1.5 + priority
+ *
+ * The 1.5× headroom covers ~3 Base blocks (12.5% baseFee cap per
+ * block), plenty for the mobile approval round-trip without bloating
+ * the wallet's max-fee display. Actual charge is
+ * `min(maxFee, baseFee + priority) × gasUsed` — any unused portion
+ * refunds, so tightening maxFee only lowers the scary UI number, not
+ * the real cost.
  */
+const BASE_ORGANIC_PRIORITY_WEI = 1_000_000n;      // 0.001 gwei
+const BASE_PRIORITY_CAP_WEI = 10_000_000n;         // 0.01 gwei hard cap
+const BASE_FEE_HEADROOM_NUMER = 15n;
+const BASE_FEE_HEADROOM_DENOM = 10n;
+
 async function computeFeeOverrides(): Promise<{
   maxFeePerGas?: bigint;
   maxPriorityFeePerGas?: bigint;
 }> {
   try {
-    const fees = await estimateFeesPerGas(wagmiConfig, { chainId: base.id });
-    if (fees.maxFeePerGas && fees.maxPriorityFeePerGas) {
-      // 20% buffer for volatile blocks — Base blocks are 2s so price
-      // can move during the wallet approval round-trip on mobile.
-      return {
-        maxFeePerGas: (fees.maxFeePerGas * 12n) / 10n,
-        maxPriorityFeePerGas: (fees.maxPriorityFeePerGas * 12n) / 10n,
-      };
-    }
+    const client = getPublicClient(wagmiConfig, {
+      chainId: base.id as 8453,
+    });
+    if (!client) return {};
+    const block = await client.getBlock({ blockTag: "latest" });
+    const baseFee = block.baseFeePerGas ?? 0n;
+    if (baseFee === 0n) return {}; // non-EIP-1559 response; let wallet decide
+    const priority =
+      BASE_ORGANIC_PRIORITY_WEI > BASE_PRIORITY_CAP_WEI
+        ? BASE_PRIORITY_CAP_WEI
+        : BASE_ORGANIC_PRIORITY_WEI;
+    const maxFee =
+      (baseFee * BASE_FEE_HEADROOM_NUMER) / BASE_FEE_HEADROOM_DENOM + priority;
+    return {
+      maxFeePerGas: maxFee,
+      maxPriorityFeePerGas: priority,
+    };
   } catch (err) {
     console.warn("[evm] fee estimation failed, falling back to wallet:", err);
+    return {};
   }
-  return {};
 }
 
 // ─────────────────────────────────────────────────────────────────────
