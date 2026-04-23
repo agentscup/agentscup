@@ -70,17 +70,29 @@ router.post(
       const { agentIds, mintAddresses } = await selectPackCards(packType);
 
       // ── Atomic DB state ──
-      // The `p_amount_cup` parameter is now a chain-agnostic numeric —
-      // we feed the wei amount directly (still fits in the column's
-      // NUMERIC range, no schema change needed). Legacy Solana rows
-      // hold $CUP base units; Base rows hold wei. Reports that care
-      // about the distinction can filter on tx_signature prefix
-      // (Solana sigs = base58, EVM hashes = 0x-prefixed hex).
+      // `pack_purchases.amount_cup` is `numeric(18,0)` (legacy from the
+      // Solana-era schema, sized for $CUP token base units that never
+      // got near 10^18). Post-V2 migration the on-chain amount is now
+      // ERC-20 CUP wei (18 decimals) and even a starter pack's 50k CUP
+      // = 5×10^22 overflows the column. Cap the stored value at the
+      // column max so the insert succeeds — the canonical receipt
+      // lives in `tx_signature` anyway (BaseScan is the source of
+      // truth for the exact paid amount).
+      //
+      // Also: pass as STRING not Number. JS Number has 53 bits of
+      // integer precision (~9×10^15); casting 5×10^22 wei to Number
+      // silently loses the lower digits. PostgREST accepts string
+      // form for numeric columns and preserves precision.
+      const AMOUNT_CAP = 999_999_999_999_999_999n; // numeric(18,0) max
+      const amountWeiRaw = verification.amountWei ?? 0n;
+      const amountForDb =
+        amountWeiRaw > AMOUNT_CAP ? AMOUNT_CAP : amountWeiRaw;
+
       const { data, error } = await supabase.rpc("open_pack_atomic", {
         p_wallet_address: walletAddress.toLowerCase(),
         p_pack_type: packType,
         p_tx_signature: txHash.toLowerCase(),
-        p_amount_cup: Number(verification.amountWei ?? 0n),
+        p_amount_cup: amountForDb.toString(),
         p_agent_ids: agentIds,
         p_mint_addresses: mintAddresses,
       });
@@ -121,9 +133,13 @@ router.post(
         already_processed: result.already_processed || false,
       });
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Unknown error";
-      console.error("[PACK OPEN ERROR]", msg);
-      res.status(500).json({ error: msg });
+      // Print the whole error object so ops can see Postgres error
+      // codes, stacks, and nested details. Previously collapsed to
+      // "Unknown error" for non-Error throws, making it impossible
+      // to diagnose numeric-overflow class issues.
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("[PACK OPEN ERROR]", msg, JSON.stringify(err, null, 2));
+      res.status(500).json({ error: msg || "Pack open failed" });
     }
   }
 );
