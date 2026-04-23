@@ -83,10 +83,21 @@ function randomBotFallbackMs(): number {
   return BOT_FALLBACK_MIN_MS + Math.floor(Math.random() * (span + 1));
 }
 
-// Bot match outcome distribution
+// Bot match outcome distribution — 45% player wins / 45% bot wins /
+// 10% draw. Variable naming is historical ("BOT_WIN_CHANCE" means the
+// chance the PLAYER wins against the bot); kept as-is to avoid a big
+// rename diff.
 const BOT_WIN_CHANCE = 0.45;   // player wins
-const BOT_LOSS_CHANCE = 0.45;  // player loses
+const BOT_LOSS_CHANCE = 0.45;  // player loses (bot wins)
 // draw = 1 - WIN - LOSS = 0.10
+
+// Competitive-score guardrails. Rejection sampling only accepts a
+// simulated result if the margin AND total-goal count fall inside
+// these windows — otherwise you get 10-2 blowouts that make the
+// in-game economy feel like play-money. A 1-3 goal margin with
+// ≤ 6 total goals is what most real football matches look like.
+const BOT_MAX_MARGIN = 3;
+const BOT_MAX_TOTAL_GOALS = 6;
 
 export function setupMatchSocket(io: Server) {
   io.on("connection", (socket: Socket) => {
@@ -860,34 +871,65 @@ async function startBotMatch(io: Server, player: QueueEntry) {
         ? "loss"
         : "draw";
 
-  // 2. Build bot squad biased toward desired outcome
-  const offsetMap = { win: -10, loss: +10, draw: 0 };
+  // 2. Build bot squad biased toward desired outcome. Offsets are
+  //    intentionally small (±3) so even win/loss rolls produce close
+  //    matches. Earlier ±10 offsets meant the player's squad was much
+  //    stronger / weaker than the bot's, which dominated the engine's
+  //    power-ratio math (powerEdge is ratio^1.3) and blew scores out
+  //    to 10-2, 11-0, etc. ±3 keeps teams within ~4% of each other and
+  //    leaves outcome to the rejection sampler below.
+  const offsetMap = { win: -3, loss: +3, draw: 0 };
   const botSquad = buildBotSquad(player.squad, offsetMap[desiredOutcome]);
 
-  // 3. Rejection-sample seeds until the engine produces the desired outcome
+  // 3. Rejection-sample seeds until the engine produces the desired
+  //    outcome AND a competitive scoreline. First pass: strict margin
+  //    + total-goal filter. Second pass (if we can't find one in
+  //    maxAttempts): drop to just the outcome filter so we don't
+  //    stall the match-find flow when the engine is in a high-scoring
+  //    mood. Either way we never ship a 10-2 score to the frontend.
   let result: MatchResult | null = null;
   let seed = Date.now();
-  const maxAttempts = desiredOutcome === "draw" ? 800 : 300;
+  const maxAttempts = desiredOutcome === "draw" ? 1500 : 600;
+
+  const outcomeMatches = (r: MatchResult): boolean => {
+    const isDraw = r.homeScore === r.awayScore;
+    const playerWon = r.homeScore > r.awayScore;
+    if (desiredOutcome === "win") return playerWon && !isDraw;
+    if (desiredOutcome === "loss") return !playerWon && !isDraw;
+    return isDraw;
+  };
+  const isCompetitive = (r: MatchResult): boolean => {
+    const margin = Math.abs(r.homeScore - r.awayScore);
+    const total = r.homeScore + r.awayScore;
+    return margin <= BOT_MAX_MARGIN && total <= BOT_MAX_TOTAL_GOALS;
+  };
 
   for (let i = 0; i < maxAttempts; i++) {
     const testSeed = Date.now() + i * 7919 + Math.floor(Math.random() * 999_983);
     const r = simulateMatch(player.squad, botSquad, testSeed);
-    const isDraw = r.homeScore === r.awayScore;
-    const playerWon = r.homeScore > r.awayScore;
-
-    const match =
-      (desiredOutcome === "win" && playerWon && !isDraw) ||
-      (desiredOutcome === "loss" && !playerWon && !isDraw) ||
-      (desiredOutcome === "draw" && isDraw);
-
-    if (match) {
+    if (outcomeMatches(r) && isCompetitive(r)) {
       result = r;
       seed = testSeed;
       break;
     }
   }
 
-  // 4. Safety fallback — if rejection sampling couldn't hit it, accept last roll
+  // 4. Fallback: outcome-only sampling if competitive version couldn't
+  //    land one. Rare but guards against infinite stalls on edge-case
+  //    squads where the engine refuses to produce a close game.
+  if (!result) {
+    for (let i = 0; i < maxAttempts; i++) {
+      const testSeed = Date.now() + i * 104729 + Math.floor(Math.random() * 999_983);
+      const r = simulateMatch(player.squad, botSquad, testSeed);
+      if (outcomeMatches(r)) {
+        result = r;
+        seed = testSeed;
+        break;
+      }
+    }
+  }
+
+  // 5. Safety net — still no result, accept whatever comes out.
   if (!result) {
     seed = Date.now();
     result = simulateMatch(player.squad, botSquad, seed);
