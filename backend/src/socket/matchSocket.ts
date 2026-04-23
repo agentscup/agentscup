@@ -5,7 +5,7 @@ import { calculateElo } from "../services/eloService";
 import {
   verifyMatchEntry,
   forfeitMatch,
-  transferEth,
+  transferCup,
   treasuryAddress,
   MATCH_ENTRY_FEE_WEI,
   isEvmAddress,
@@ -995,7 +995,7 @@ async function finishBotMatch(io: Server, match: ActiveMatch) {
         console.error(`[BOT] WIN REFUND FAILED: ${refund.error}`);
       }
 
-      const topUp = await transferEth(match.homeWallet, MATCH_ENTRY_FEE_WEI);
+      const topUp = await transferCup(match.homeWallet, MATCH_ENTRY_FEE_WEI);
       if (topUp.success) {
         payoutTx = topUp.txHash ?? payoutTx;
         playerPrizeWei += MATCH_ENTRY_FEE_WEI;

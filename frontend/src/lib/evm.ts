@@ -22,14 +22,20 @@ import {
   switchChain,
   getChainId,
 } from "wagmi/actions";
-import { keccak256, toHex, toBytes, type Hash } from "viem";
+import { keccak256, toHex, toBytes, maxUint256, type Hash } from "viem";
+import { getAccount } from "wagmi/actions";
 import { base } from "wagmi/chains";
 
 import { wagmiConfig, CONTRACT_ADDRESSES, MATCH_ENTRY_FEE_WEI, TARGET_CHAIN_ID } from "./wagmi";
 
-import AgentsCupPackStoreAbi from "@/abi/AgentsCupPackStore.json";
-import AgentsCupMarketplaceAbi from "@/abi/AgentsCupMarketplace.json";
-import AgentsCupMatchEscrowAbi from "@/abi/AgentsCupMatchEscrow.json";
+// V2 contracts (CUP-native). The old ETH-based ABIs are kept as imports
+// for a transition window but every call site uses V2 now — the switch
+// landed when the economy migrated from native ETH to $CUP (50k/100k/
+// 250k/750k CUP packs + 50k CUP match entry).
+import AgentsCupPackStoreAbi from "@/abi/AgentsCupPackStoreV2.json";
+import AgentsCupMarketplaceAbi from "@/abi/AgentsCupMarketplaceV2.json";
+import AgentsCupMatchEscrowAbi from "@/abi/AgentsCupMatchEscrowV2.json";
+import AgentsCupTokenAbi from "@/abi/AgentsCupToken.json";
 
 export { MATCH_ENTRY_FEE_WEI };
 
@@ -175,6 +181,83 @@ async function computeFeeOverrides(): Promise<{
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// $CUP token allowance helpers
+// ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Reads the caller's CUP balance. Returns 0n if the wallet isn't
+ * connected or the RPC is unreachable — callers should check > 0 before
+ * assuming the user has liquidity to pay for a pack / deposit.
+ */
+export async function readCupBalance(
+  owner: `0x${string}`
+): Promise<bigint> {
+  try {
+    const v = (await readContract(wagmiConfig, {
+      address: CONTRACT_ADDRESSES.cupToken,
+      abi: AgentsCupTokenAbi,
+      functionName: "balanceOf",
+      args: [owner],
+    })) as bigint;
+    return v;
+  } catch {
+    return 0n;
+  }
+}
+
+/**
+ * Ensures the connected wallet has approved `spender` for at least
+ * `amount` CUP — if not, submits an approve() tx and waits for it to
+ * confirm. Approves `maxUint256` so the user doesn't have to re-sign
+ * for every pack / listing / match after the first purchase. A single
+ * up-front approve-max is the established UX on DEXes and bluechip
+ * NFT markets; alternative is to approve the exact amount each time,
+ * which double-prompts the wallet for every in-game action.
+ *
+ * Returns the approval tx hash if a new approve was submitted, or null
+ * if the existing allowance was already sufficient.
+ */
+export async function ensureCupAllowance(
+  spender: `0x${string}`,
+  amount: bigint
+): Promise<Hash | null> {
+  const account = getAccount(wagmiConfig);
+  const owner = account.address as `0x${string}` | undefined;
+  if (!owner) throw new Error("Wallet not connected");
+
+  // Fast path — read current allowance.
+  let current = 0n;
+  try {
+    current = (await readContract(wagmiConfig, {
+      address: CONTRACT_ADDRESSES.cupToken,
+      abi: AgentsCupTokenAbi,
+      functionName: "allowance",
+      args: [owner, spender],
+    })) as bigint;
+  } catch {
+    // readContract can flake on RPC hiccups; fall through and submit approve.
+  }
+  if (current >= amount) return null;
+
+  await ensureBaseChain();
+  const feeOverrides = await computeFeeOverrides();
+  const hash = await writeContract(wagmiConfig, {
+    chainId: base.id,
+    address: CONTRACT_ADDRESSES.cupToken,
+    abi: AgentsCupTokenAbi,
+    functionName: "approve",
+    args: [spender, maxUint256],
+    ...feeOverrides,
+  });
+  await waitForTransactionReceipt(wagmiConfig, {
+    chainId: base.id,
+    hash,
+    timeout: 60_000,
+  });
+  return hash;
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // Hex utilities
 // ─────────────────────────────────────────────────────────────────────
 
@@ -198,18 +281,26 @@ export function hashToBytes32(input: string): `0x${string}` {
 // ─────────────────────────────────────────────────────────────────────
 
 /**
- * Calls AgentsCupPackStore.buyPack(packTier, requestId) with msg.value
- * = priceWei. Returns the tx hash once confirmed.
+ * Buys a pack denominated in $CUP. Caller's wallet must hold at least
+ * `priceCup` CUP and will auto-approve the pack store for max allowance
+ * on the first buy (second tx), then submit buyPack() (third tx — or
+ * single tx if allowance is already there).
  *
  * The backend verifies the resulting PackPurchased event; requestId
  * lets the backend dedup any replays.
  */
 export async function buyPack(
   packTier: number,
-  priceWei: bigint
+  priceCup: bigint
 ): Promise<{ txHash: Hash; requestId: `0x${string}` }> {
   assertContract("packStore");
   await ensureBaseChain();
+
+  // Make sure the store can pull the CUP out of the user's wallet.
+  // Noop if already approved — the first pack buy is a 2-tx flow
+  // (approve + buy), subsequent buys are single-tx.
+  await ensureCupAllowance(CONTRACT_ADDRESSES.packStore, priceCup);
+
   const requestId = randomBytes32();
   const feeOverrides = await computeFeeOverrides();
 
@@ -219,7 +310,6 @@ export async function buyPack(
     abi: AgentsCupPackStoreAbi,
     functionName: "buyPack",
     args: [packTier, requestId],
-    value: priceWei,
     ...feeOverrides,
   });
   await waitForTransactionReceipt(wagmiConfig, {
@@ -228,6 +318,22 @@ export async function buyPack(
     timeout: 60_000,
   });
   return { txHash: hash, requestId };
+}
+
+/** Reads the on-chain price for a pack tier from PackStoreV2. Falls back
+ *  to 0n if the RPC flakes — caller should check before submitting. */
+export async function readPackPriceCup(packTier: number): Promise<bigint> {
+  try {
+    const v = (await readContract(wagmiConfig, {
+      address: CONTRACT_ADDRESSES.packStore,
+      abi: AgentsCupPackStoreAbi,
+      functionName: "packPrices",
+      args: [packTier],
+    })) as bigint;
+    return v;
+  } catch {
+    return 0n;
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -264,13 +370,15 @@ export async function listAgentOnChain(args: {
   return hash;
 }
 
-/** Calls AgentsCupMarketplace.buyAgent with msg.value = priceWei. */
+/** Buys an agent listing paid in CUP. Ensures allowance first so the
+ *  contract can pull fee + payout in a single tx from the buyer. */
 export async function buyAgentOnChain(
   listingIdHex: `0x${string}`,
-  priceWei: bigint
+  priceCup: bigint
 ): Promise<Hash> {
   assertContract("marketplace");
   await ensureBaseChain();
+  await ensureCupAllowance(CONTRACT_ADDRESSES.marketplace, priceCup);
   const feeOverrides = await computeFeeOverrides();
   const hash = await writeContract(wagmiConfig, {
     chainId: base.id,
@@ -278,7 +386,6 @@ export async function buyAgentOnChain(
     abi: AgentsCupMarketplaceAbi,
     functionName: "buyAgent",
     args: [listingIdHex],
-    value: priceWei,
     ...feeOverrides,
   });
   await waitForTransactionReceipt(wagmiConfig, {
@@ -317,16 +424,17 @@ export async function cancelListingOnChain(
 // ─────────────────────────────────────────────────────────────────────
 
 /**
- * Calls AgentsCupMatchEscrow.depositEntry with a freshly-generated
- * bytes32 matchId and slot=0. The backend pairs players after both
- * deposits land; draining the escrows on settlement is an operator
- * concern, not the player's.
+ * Deposits the CUP match entry fee into the escrow and returns the
+ * matchId the caller is parked under. Ensures the escrow has allowance
+ * first; the escrow itself custodies the deposited CUP until the
+ * operator role calls payoutWinner / refundDraw / forfeitAll.
  */
 export async function depositMatchEntry(
-  entryFeeWei: bigint = MATCH_ENTRY_FEE_WEI
+  entryFeeCup: bigint = MATCH_ENTRY_FEE_WEI
 ): Promise<{ txHash: Hash; matchId: `0x${string}` }> {
   assertContract("matchEscrow");
   await ensureBaseChain();
+  await ensureCupAllowance(CONTRACT_ADDRESSES.matchEscrow, entryFeeCup);
   const matchId = randomBytes32();
   const feeOverrides = await computeFeeOverrides();
   const hash = await writeContract(wagmiConfig, {
@@ -335,7 +443,6 @@ export async function depositMatchEntry(
     abi: AgentsCupMatchEscrowAbi,
     functionName: "depositEntry",
     args: [matchId, 0],
-    value: entryFeeWei,
     ...feeOverrides,
   });
   await waitForTransactionReceipt(wagmiConfig, {

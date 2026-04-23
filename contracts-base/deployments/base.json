@@ -9,7 +9,13 @@
     "AgentsCupToken": "0x08d1c6b78e8aa80E0C505829C30C0f81F984a668",
     "CupMerkleDistributor_Main": "0x069B6a593aDb9310DF0B51cD2FA06b0dCf1E3A66",
     "CupMerkleDistributor_EaBonus": "0x5e5b8F1e570C0db669EE83c6f91b9d144F42097A",
-    "CupClaimRouter": "0x8B4De63B96BA2a103b2925730b65560b05e5f195"
+    "CupClaimRouter": "0x8B4De63B96BA2a103b2925730b65560b05e5f195",
+    "CupMerkleDistributor_Flat69k": "0xBd8E2C1B8706BaAEB6e809026f57A7D808677268",
+    "CupClaimRouter_Flat69k": "0x13087c212f2b8253b761fE91d8281bD48EE48C24",
+    "CupTopHolderNFT": "0x9FA62fCd896A72b5C6F0474Aa1a34234326Ee451",
+    "AgentsCupPackStoreV2": "0x9838f6a1b8B949e0Ef0e96e4BE33d1F262D40328",
+    "AgentsCupMarketplaceV2": "0xfd88e9450eF9072d0162c27Dfd25586c13Ddcc9c",
+    "AgentsCupMatchEscrowV2": "0x2ec18B8dE83333bAcCcb0B08e03C24F8fD834517"
   },
   "config": {
     "treasury": "0x59A5CBC684BfED4AA83Abce9Ec637c3F2b3634Dc",
@@ -18,14 +24,17 @@
   "merkle": {
     "mainRoot": "0xdebf51afd037b543d63ef77342b0c07d3c678f72086c3fa521a60731345eb86b",
     "eaBonusRoot": "0x6c535a39021a803a65ddafe65657a67e14279a5d7e1a6edae84d80248df93ebf",
-    "claimDeadline": "2026-07-21"
+    "claimDeadline": "2026-07-21",
+    "flat69kRoot": "0xa987af7beb2512fc32fbae765a8c3b9a40e877a1decb60eb9e91fc98ec523afd"
   },
   "totals": {
     "mainPool": "220000000",
     "eaBonusPool": "80000000",
     "totalDistributed": "300000000",
     "mainRecipients": 1819,
-    "eaBonusRecipients": 1216
+    "eaBonusRecipients": 1216,
+    "flat69kPool": "133998000",
+    "flat69kRecipients": 1942
   },
   "claimRouter": {
     "feeWei": "300000000000000",
@@ -33,5 +42,22 @@
     "treasury": "0x59A5CBC684BfED4AA83Abce9Ec637c3F2b3634Dc",
     "mainDistributor": "0x069B6a593aDb9310DF0B51cD2FA06b0dCf1E3A66",
     "bonusDistributor": "0x5e5b8F1e570C0db669EE83c6f91b9d144F42097A"
+  },
+  "nftAirdrop": {
+    "tokenId": 1,
+    "recipients": 123,
+    "tx": "0xee88c900f24b9882614438e4fc5c079645cc412d315bc0e007e37cfbdf4a626f",
+    "airdroppedAt": "2026-04-23T09:58:32.354Z"
+  },
+  "v2": {
+    "packPrices": {
+      "starter": "50000",
+      "pro": "100000",
+      "elite": "250000",
+      "legendary": "750000"
+    },
+    "matchEntryFee": "50000",
+    "marketplaceFeeBps": 250,
+    "deployedAt": "2026-04-23T14:26:51.533Z"
   }
 }

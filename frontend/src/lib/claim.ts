@@ -18,7 +18,7 @@ import { wagmiConfig } from "./wagmi";
 import CupClaimRouterAbi from "@/abi/CupClaimRouter.json";
 
 export const CLAIM_ROUTER_ADDRESS = (process.env.NEXT_PUBLIC_CLAIM_ROUTER_ADDRESS ??
-  "0x8B4De63B96BA2a103b2925730b65560b05e5f195") as `0x${string}`;
+  "0x13087c212f2b8253b761fE91d8281bD48EE48C24") as `0x${string}`;
 
 export type ClaimEligibility = {
   main?: { amount: string; proof: `0x${string}`[] };

@@ -43,12 +43,15 @@ router.post(
       }
 
       // ── Verify the on-chain tx matches our expectation ──
-      // Checks: tx mined + succeeded, hit the PackStore contract, emitted
-      // PackPurchased with matching buyer + amount >= priceWei.
+      // Checks: tx mined + succeeded, hit the V2 PackStore contract,
+      // emitted PackPurchased with buyer + amount matching the tier's
+      // configured $CUP price. V2 uses CUP not ETH but the event shape
+      // `PackPurchased(buyer, packTier, amount, requestId)` is
+      // unchanged — `amount` just represents CUP wei now.
       const verification = await verifyPackPurchase(
         txHash,
         walletAddress,
-        BigInt(packConfig.priceWei)
+        BigInt(packConfig.priceCupWei)
       );
       if (!verification.valid) {
         console.log(

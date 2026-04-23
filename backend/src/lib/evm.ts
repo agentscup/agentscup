@@ -46,9 +46,14 @@ import {
 } from "viem/accounts";
 import { base } from "viem/chains";
 
-import AgentsCupPackStoreAbi from "../abi/AgentsCupPackStore.json";
-import AgentsCupMarketplaceAbi from "../abi/AgentsCupMarketplace.json";
-import AgentsCupMatchEscrowAbi from "../abi/AgentsCupMatchEscrow.json";
+// V2 ABIs — economy migrated from native ETH to $CUP on 2026-04-23.
+// Event signatures (PackPurchased / AgentSold / EntryDeposited) are
+// unchanged between V1 and V2 so the verifier logic stays the same;
+// only the function inputs and the settlement asset flipped.
+import AgentsCupPackStoreAbi from "../abi/AgentsCupPackStoreV2.json";
+import AgentsCupMarketplaceAbi from "../abi/AgentsCupMarketplaceV2.json";
+import AgentsCupMatchEscrowAbi from "../abi/AgentsCupMatchEscrowV2.json";
+import AgentsCupTokenAbi from "../abi/AgentsCupToken.json";
 
 // ─────────────────────────────────────────────────────────────────────
 // Config — Base mainnet only. Testnet support was pulled from the
@@ -96,13 +101,22 @@ const TREASURY_PRIVATE_KEY = (process.env.TREASURY_PRIVATE_KEY ?? "").trim();
 const PACK_STORE_ADDRESS = normalizeAddress(process.env.PACK_STORE_ADDRESS);
 const MARKETPLACE_ADDRESS = normalizeAddress(process.env.MARKETPLACE_ADDRESS);
 const MATCH_ESCROW_ADDRESS = normalizeAddress(process.env.MATCH_ESCROW_ADDRESS);
+const CUP_TOKEN_ADDRESS = normalizeAddress(
+  process.env.CUP_TOKEN_ADDRESS ||
+    "0x08d1c6b78e8aa80E0C505829C30C0f81F984a668"
+);
 
-export const MATCH_ENTRY_FEE_WEI = 1_000_000_000_000_000n; // 0.001 ETH
+/** 50,000 CUP — V2 match entry fee. 18 decimals → `50_000n * 10^18`.
+ *  Flipped from 0.001 ETH to 50k CUP when the economy migrated to
+ *  $CUP on 2026-04-23. This is the per-player amount the match
+ *  escrow pulls into custody on `depositEntry`; winner gets 2× pot. */
+export const MATCH_ENTRY_FEE_WEI = 50_000n * 10n ** 18n;
 export const CHAIN_CONFIG = { chainId: CHAIN_ID, rpcUrl: RPC_URL };
 export const CONTRACTS = {
   packStore: PACK_STORE_ADDRESS,
   marketplace: MARKETPLACE_ADDRESS,
   matchEscrow: MATCH_ESCROW_ADDRESS,
+  cupToken: CUP_TOKEN_ADDRESS,
 };
 
 // ─────────────────────────────────────────────────────────────────────
@@ -571,9 +585,10 @@ export async function refundMatchDraw(
 }
 
 /**
- * Send native ETH from the treasury wallet to any address. Used by
- * bot-match settlement where the player wins and needs the bonus
- * half of the prize pot that a human opponent would have provided.
+ * Send native ETH from the treasury wallet to any address. Legacy —
+ * retained for the ETH-era `compensateMissedTopUp` script but no
+ * longer used in the V2 economy path. Keeping the export so historical
+ * tooling still compiles.
  */
 export async function transferEth(
   to: string,
@@ -606,6 +621,73 @@ export async function transferEth(
       return { success: false, error: (err as Error).message };
     }
   });
+}
+
+/**
+ * Transfer $CUP from the treasury wallet to `to`. Used by bot-match
+ * settlement — the "second player" in a bot match doesn't actually
+ * deposit into the escrow, so when the human wins we have to top up
+ * the prize pot from treasury CUP to match what a PvP pot would look
+ * like (2× entry fee). Treasury must hold enough CUP — operations
+ * docs the minimum balance in the `/health/treasury` endpoint.
+ */
+export async function transferCup(
+  to: string,
+  amountCupWei: bigint
+): Promise<PayoutResult> {
+  if (!CUP_TOKEN_ADDRESS) {
+    return { success: false, error: "CUP_TOKEN_ADDRESS not configured" };
+  }
+  if (!isEvmAddress(to)) {
+    return { success: false, error: "invalid destination" };
+  }
+  if (amountCupWei <= 0n) {
+    return { success: false, error: "amountCupWei must be > 0" };
+  }
+  return withRetry(
+    `transferCup ${to.slice(0, 10)} ${amountCupWei}CUPwei`,
+    async () => {
+      try {
+        const wallet = requireWalletClient();
+        const hash = await wallet.writeContract({
+          account: wallet.account,
+          chain: CHAIN,
+          address: CUP_TOKEN_ADDRESS,
+          abi: AgentsCupTokenAbi,
+          functionName: "transfer",
+          args: [getAddress(to), amountCupWei],
+        });
+        await publicClient.waitForTransactionReceipt({
+          hash,
+          timeout: 30_000,
+        });
+        return { success: true, txHash: hash };
+      } catch (err) {
+        return { success: false, error: (err as Error).message };
+      }
+    }
+  );
+}
+
+/**
+ * Reads a wallet's $CUP balance. Used by the `/health/treasury`
+ * endpoint so ops can monitor how much CUP the treasury has for
+ * bot-match top-ups.
+ */
+export async function readCupBalance(address: string): Promise<bigint> {
+  if (!CUP_TOKEN_ADDRESS) return 0n;
+  if (!isEvmAddress(address)) return 0n;
+  try {
+    const v = (await publicClient.readContract({
+      address: CUP_TOKEN_ADDRESS,
+      abi: AgentsCupTokenAbi,
+      functionName: "balanceOf",
+      args: [getAddress(address)],
+    })) as bigint;
+    return v;
+  } catch {
+    return 0n;
+  }
 }
 
 /** Drain any funded slots to a beneficiary — emergency recovery +

@@ -2,23 +2,25 @@ import { supabase } from "../lib/supabase";
 import crypto from "crypto";
 
 /**
- * Pack prices are stored twice: once as human-readable ETH for
- * display, and once as wei (BigInt-safe string) for on-chain
- * verification. The frontend sends the wei amount when it calls
- * AgentsCupPackStore.buyPack, and the backend's verifier compares
- * bit-for-bit against `priceWei` below.
+ * Pack prices denominated in $CUP (18 decimals). The frontend reads
+ * `priceCupWei` and the V2 PackStore's `buyPack(tier, requestId)`
+ * pulls exactly this amount via CUP transferFrom. Verifier compares
+ * the event's `amount` bit-for-bit against `priceCupWei` below.
  *
- * Tune these numbers by editing this file + bumping tiers; no
- * redeploy of the smart contract is needed since the PackStore
- * contract accepts any amount (the event records what was paid,
- * we validate the amount matches the tier's configured price).
+ * V2 migration (2026-04-23): economy flipped from native ETH to
+ * $CUP. The V2 PackStore contract stores the price table on-chain
+ * in `packPrices(tier)` — changing prices here requires calling
+ * `setPackPrice(tier, newWei)` on the contract AND updating this
+ * file in the same drop so the verifier stays in sync.
  */
+const CUP_WEI = 10n ** 18n;
+
 export const PACK_CONFIGS = {
   starter: {
     name: "Starter Pack",
     tier: 1,
-    priceEth: "0.002",
-    priceWei: "2000000000000000", // 0.002 ETH
+    priceCupWei: (50_000n * CUP_WEI).toString(),
+    priceCupHuman: "50,000",
     cardCount: 4,
     rareGuarantee: 0,
     epicChance: 0.02,
@@ -28,8 +30,8 @@ export const PACK_CONFIGS = {
   pro: {
     name: "Pro Pack",
     tier: 2,
-    priceEth: "0.004",
-    priceWei: "4000000000000000", // 0.004 ETH
+    priceCupWei: (100_000n * CUP_WEI).toString(),
+    priceCupHuman: "100,000",
     cardCount: 7,
     rareGuarantee: 1,
     epicChance: 0.05,
@@ -39,8 +41,8 @@ export const PACK_CONFIGS = {
   elite: {
     name: "Elite Pack",
     tier: 3,
-    priceEth: "0.015",
-    priceWei: "15000000000000000", // 0.015 ETH
+    priceCupWei: (250_000n * CUP_WEI).toString(),
+    priceCupHuman: "250,000",
     cardCount: 12,
     rareGuarantee: 3,
     epicChance: 0.25,
@@ -50,8 +52,8 @@ export const PACK_CONFIGS = {
   legendary: {
     name: "Legendary Pack",
     tier: 4,
-    priceEth: "0.05",
-    priceWei: "50000000000000000", // 0.05 ETH
+    priceCupWei: (750_000n * CUP_WEI).toString(),
+    priceCupHuman: "750,000",
     cardCount: 15,
     rareGuarantee: 5,
     epicChance: 0.35,

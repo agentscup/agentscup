@@ -10,7 +10,7 @@ import { ConnectButton } from "@rainbow-me/rainbowkit";
  *   - Users connect their Base-compatible wallet
  *   - Optionally add their X handle
  *   - Submit → backend upserts into airdrop_applications
- *   - At distribution time, each unique submitter gets 150,000 CUP
+ *   - At distribution time, each unique submitter gets 69,000 CUP
  *     via a new MerkleDistributor (gated behind the paid claim router).
  */
 
@@ -66,7 +66,7 @@ export default function AirdropApplyPage() {
         <p className="text-xs text-[#e0d6b8]/60 mb-8">
           Missed the main snapshot? Apply here for the supplementary round.
           <br />
-          Each approved wallet receives <span className="text-[#FFD700] font-bold">150,000 CUP</span>.
+          Each approved wallet receives <span className="text-[#FFD700] font-bold">69,000 CUP</span>.
         </p>
 
         {total !== null && (
@@ -136,7 +136,7 @@ export default function AirdropApplyPage() {
               disabled={submitting}
               className="pixel-btn w-full text-[10px] disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              {submitting ? "SUBMITTING..." : "APPLY FOR 150,000 CUP"}
+              {submitting ? "SUBMITTING..." : "APPLY FOR 69,000 CUP"}
             </button>
 
             <p className="text-[10px] text-[#e0d6b8]/40">
@@ -157,7 +157,7 @@ export default function AirdropApplyPage() {
           >
             <div className="font-pixel text-2xl text-[#00ff41] mb-4">✓ SUBMITTED</div>
             <p className="text-xs text-[#e0d6b8]/80 mb-2">
-              <span className="text-[#FFD700] font-bold">150,000 CUP</span> will be
+              <span className="text-[#FFD700] font-bold">69,000 CUP</span> will be
               allocated to this wallet if it passes the sybil check at
               distribution time.
             </p>

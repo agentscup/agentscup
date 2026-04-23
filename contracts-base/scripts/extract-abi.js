@@ -23,6 +23,10 @@ const CONTRACTS = [
   "AgentsCupPackStore",
   "AgentsCupMarketplace",
   "AgentsCupMatchEscrow",
+  "AgentsCupPackStoreV2",
+  "AgentsCupMarketplaceV2",
+  "AgentsCupMatchEscrowV2",
+  "AgentsCupToken",
 ];
 
 const root = path.join(__dirname, "..");

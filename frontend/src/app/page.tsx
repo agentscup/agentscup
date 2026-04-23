@@ -100,6 +100,86 @@ export default function Home() {
         </div>
       </section>
 
+      {/* $CUP Token — chart + buy ────────────────────────────────────
+          The in-game currency lives on Base as an ERC-20 at the CA
+          below. We embed DexScreener's live chart + volume widget and
+          surface a one-click BUY link that deep-links to Uniswap's
+          Base swap UI pre-populated with the token address. The
+          chart iframe is lazy-loaded (eager: false) so first paint
+          isn't blocked by DexScreener's bundle.
+       ─────────────────────────────────────────────────────────────── */}
+      <section className="relative max-w-7xl mx-auto px-4 sm:px-6 py-12">
+        <div
+          className="overflow-hidden"
+          style={{
+            background: "linear-gradient(180deg, #1a1400 0%, #0a0800 100%)",
+            border: "3px solid #FFD700",
+            boxShadow:
+              "inset -3px -3px 0 #B8960C, inset 3px 3px 0 #FFF4B0, 6px 6px 0 rgba(0,0,0,0.5)",
+          }}
+        >
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-5 border-b-2 border-[#FFD700]/30">
+            <div>
+              <h2
+                className="font-pixel text-[10px] sm:text-xs text-[#FFD700] tracking-wider mb-2"
+                style={{ textShadow: "2px 2px 0 #B8960C" }}
+              >
+                $CUP TOKEN
+              </h2>
+              <p className="text-[10px] sm:text-xs text-white/60 leading-relaxed">
+                The game&apos;s in-economy currency on Base. Use it to buy
+                packs, list agents on the market, and enter matches.
+              </p>
+              <p className="text-[9px] text-white/30 mt-1 font-mono break-all">
+                CA: 0x08d1c6b78e8aa80E0C505829C30C0f81F984a668
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <a
+                href="https://app.uniswap.org/swap?outputCurrency=0x08d1c6b78e8aa80E0C505829C30C0f81F984a668&chain=base"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-pixel text-[8px] sm:text-[10px] tracking-wider px-4 py-3 whitespace-nowrap transition-colors"
+                style={{
+                  background: "#FFD700",
+                  color: "#1a1200",
+                  boxShadow:
+                    "inset -2px -2px 0 #B8960C, inset 2px 2px 0 #FFF4B0, 0 3px 0 #8B6F00",
+                }}
+              >
+                BUY ON UNISWAP
+              </a>
+              <a
+                href="https://dexscreener.com/base/0x08d1c6b78e8aa80E0C505829C30C0f81F984a668"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-pixel text-[8px] sm:text-[10px] tracking-wider px-4 py-3 whitespace-nowrap transition-colors"
+                style={{
+                  background: "transparent",
+                  color: "#FFD700",
+                  border: "2px solid #FFD700",
+                  boxShadow: "inset -2px -2px 0 rgba(184,150,12,0.4)",
+                }}
+              >
+                VIEW CHART ↗
+              </a>
+            </div>
+          </div>
+          <div
+            className="relative w-full"
+            style={{ aspectRatio: "16 / 9", minHeight: "420px" }}
+          >
+            <iframe
+              src="https://dexscreener.com/base/0x08d1c6b78e8aa80E0C505829C30C0f81F984a668?embed=1&theme=dark&trades=0&info=0"
+              title="$CUP / WETH DexScreener chart"
+              className="absolute inset-0 w-full h-full"
+              style={{ border: "0" }}
+              loading="lazy"
+            />
+          </div>
+        </div>
+      </section>
+
       {/* Stats bar */}
       <section className="relative max-w-7xl mx-auto px-4 sm:px-6 py-12">
         <div className="py-8 px-6" style={{ background: "linear-gradient(180deg, #0f2a0f 0%, #0a1e0a 100%)", border: "3px solid #1E8F4E", boxShadow: "inset -3px -3px 0 #0B6623, inset 3px 3px 0 #2eb060, 6px 6px 0 rgba(0,0,0,0.5)" }}>

@@ -274,22 +274,24 @@ export const ALL_AGENTS: Agent[] = [
 /* ================================================================== */
 
 /**
- * Pack catalogue mirrored from the backend's PACK_CONFIGS. The values
- * MUST stay in sync with backend/src/services/packService.ts —
- * particularly `priceWei` and `tier`, because those are the two
- * numbers the on-chain PackStore + backend verifier compare.
+ * Pack catalogue mirrored from the backend's PACK_CONFIGS. Values MUST
+ * stay in sync with backend/src/services/packService.ts — `priceCupWei`
+ * and `tier` are what the on-chain PackStoreV2 + backend verifier
+ * compare.
  *
- * Changing prices? Update both files and redeploy them in the same
- * drop; the DB stores `price_wei` on each purchase row so historical
- * data is preserved through tuning changes.
+ * Prices are in $CUP (18 decimals). The V2 pack store stores the same
+ * wei values on-chain in `packPrices(tier)`; changing prices here
+ * requires calling `setPackPrice(tier, newWei)` on the contract too.
  */
+const CUP_WEI = 10n ** 18n;
+
 export const PACK_TYPES: PackType[] = [
   {
     id: 'starter',
     name: 'Starter Pack',
     tier: 1,
-    priceEth: '0.002',
-    priceWei: '2000000000000000',
+    priceCupWei: (50_000n * CUP_WEI).toString(),
+    priceCupHuman: '50,000',
     cardCount: 4,
     rareGuarantee: 0,
     epicChance: 0.02,
@@ -300,8 +302,8 @@ export const PACK_TYPES: PackType[] = [
     id: 'pro',
     name: 'Pro Pack',
     tier: 2,
-    priceEth: '0.004',
-    priceWei: '4000000000000000',
+    priceCupWei: (100_000n * CUP_WEI).toString(),
+    priceCupHuman: '100,000',
     cardCount: 7,
     rareGuarantee: 1,
     epicChance: 0.05,
@@ -312,8 +314,8 @@ export const PACK_TYPES: PackType[] = [
     id: 'elite',
     name: 'Elite Pack',
     tier: 3,
-    priceEth: '0.015',
-    priceWei: '15000000000000000',
+    priceCupWei: (250_000n * CUP_WEI).toString(),
+    priceCupHuman: '250,000',
     cardCount: 12,
     rareGuarantee: 3,
     epicChance: 0.25,
@@ -324,8 +326,8 @@ export const PACK_TYPES: PackType[] = [
     id: 'legendary',
     name: 'Legendary Pack',
     tier: 4,
-    priceEth: '0.05',
-    priceWei: '50000000000000000',
+    priceCupWei: (750_000n * CUP_WEI).toString(),
+    priceCupHuman: '750,000',
     cardCount: 15,
     rareGuarantee: 5,
     epicChance: 0.35,

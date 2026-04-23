@@ -80,16 +80,24 @@ export interface Listing {
 
 /**
  * Pack configuration as displayed to the buyer. `tier` is the numeric
- * enum value the PackStore contract expects on-chain; `priceWei` is
- * the exact wei amount to forward in msg.value (validated bit-for-bit
- * by the backend verifier before cards are rolled).
+ * enum value the PackStore contract expects on-chain.
+ *
+ * `priceCupWei` is the price denominated in $CUP base units (18
+ * decimals) — e.g. 50,000 CUP is `50000 * 10^18`. The frontend reads
+ * this directly to show the label and to call approve + buyPack.
+ *
+ * `priceCupHuman` is the pre-formatted label (`"50,000"`, `"750,000"`)
+ * so we don't re-run Intl.NumberFormat on every render.
+ *
+ * The legacy `priceEth`/`priceWei` fields are gone — the V2 economy
+ * is CUP-only on-chain.
  */
 export interface PackType {
   id: string;
   name: string;
   tier: number;
-  priceEth: string;
-  priceWei: string;
+  priceCupWei: string;
+  priceCupHuman: string;
   cardCount: number;
   rareGuarantee: number;
   epicChance: number;

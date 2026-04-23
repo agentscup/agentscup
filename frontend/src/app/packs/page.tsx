@@ -76,7 +76,7 @@ function PackCard({ pack, onBuy, disabled }: { pack: PackType; onBuy: () => void
         disabled={disabled}
         className="pixel-btn w-full text-[8px] disabled:opacity-40 disabled:cursor-not-allowed"
       >
-        {pack.priceEth} ETH
+        {pack.priceCupHuman} $CUP
       </button>
     </div>
   );
@@ -138,9 +138,12 @@ export default function PacksPage() {
         return;
       }
 
-      // Fresh purchase: send on-chain tx, then claim cards server-side
-      const priceWei = BigInt(pack.priceWei);
-      const { txHash } = await buyPack(pack.tier, priceWei);
+      // Fresh purchase: send on-chain tx, then claim cards server-side.
+      // Pack prices are $CUP wei (18 decimals). buyPack handles approve
+      // internally so the first purchase is a 2-tx flow; subsequent
+      // buys use the max allowance set on the first approve.
+      const priceCup = BigInt(pack.priceCupWei);
+      const { txHash } = await buyPack(pack.tier, priceCup);
 
       // Stash tx hash so a server-side failure can be retried without re-paying
       pendingTx.current = { txHash, packType: pack.id };
@@ -151,8 +154,10 @@ export default function PacksPage() {
 
       // Friendlier errors for common wallet / chain issues.
       const lc = msg.toLowerCase();
-      if (lc.includes("insufficient funds") || lc.includes("exceeds the balance")) {
-        msg = `Not enough ETH for ${pack.priceEth} ETH + gas. Top up your wallet on Base and try again.`;
+      if (lc.includes("erc20insufficientbalance") || lc.includes("transferfrom failed") || lc.includes("insufficient allowance")) {
+        msg = `Not enough $CUP for ${pack.priceCupHuman} $CUP. Buy $CUP on Uniswap (homepage link) and try again.`;
+      } else if (lc.includes("insufficient funds") || lc.includes("exceeds the balance")) {
+        msg = `Not enough ETH for gas. Top up a small amount of ETH on Base — packs cost $CUP but you still need ETH for the network fee.`;
       } else if (lc.includes("user rejected") || lc.includes("user denied")) {
         msg = "Transaction rejected in wallet.";
       } else if (

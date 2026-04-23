@@ -178,8 +178,13 @@ export const CONTRACT_ADDRESSES = {
   packStore: (process.env.NEXT_PUBLIC_PACK_STORE_ADDRESS ?? "") as `0x${string}`,
   marketplace: (process.env.NEXT_PUBLIC_MARKETPLACE_ADDRESS ?? "") as `0x${string}`,
   matchEscrow: (process.env.NEXT_PUBLIC_MATCH_ESCROW_ADDRESS ?? "") as `0x${string}`,
+  /** $CUP ERC-20 on Base — the game's in-economy currency. */
+  cupToken: (process.env.NEXT_PUBLIC_CUP_TOKEN_ADDRESS ??
+    "0x08d1c6b78e8aa80E0C505829C30C0f81F984a668") as `0x${string}`,
 };
 
-/** 0.001 ETH — default match entry fee. Kept in wei as a JS BigInt
- *  so it survives JSON round-trips without precision loss. */
-export const MATCH_ENTRY_FEE_WEI = 1_000_000_000_000_000n;
+/** 50,000 CUP — match entry fee (18 decimals → * 10^18). This is the
+ *  amount each player deposits into the escrow per ranked match; winner
+ *  takes 2× the pot. V2 switched from 0.001 ETH to a CUP-denominated fee
+ *  as part of the full ETH→CUP economy migration. */
+export const MATCH_ENTRY_FEE_WEI = 50_000n * 10n ** 18n;

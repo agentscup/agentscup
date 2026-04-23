@@ -16,13 +16,70 @@ import {
 } from "@/lib/claim";
 
 /**
- * /claim — one-stop CUP airdrop claim page.
- *   - Looks up connected wallet in the combined proofs JSON (main + bonus)
- *   - Shows allocations, fee, already-claimed state
- *   - On click, submits one tx that pays $1 fee → treasury and pulls CUP
- *     from BOTH distributors into the user's wallet.
+ * Feature flag — when `NEXT_PUBLIC_CLAIM_LIVE` is anything other than
+ * the string "true", the page renders a "goes live tomorrow" teaser
+ * instead of the functional claim UI. Used to keep the router
+ * contract deployed but gate user access until ops is ready to open
+ * the window. Flip the env var (or hard-code the constant below) and
+ * redeploy when the claim should open.
  */
+const CLAIM_LIVE = process.env.NEXT_PUBLIC_CLAIM_LIVE === "true";
+
+function ClaimComingSoon() {
+  return (
+    <div className="min-h-screen bg-[#0a0a0a] text-[#e0d6b8] py-20 px-6 flex items-start justify-center">
+      <div className="max-w-xl w-full text-center">
+        <h1
+          className="font-pixel text-2xl sm:text-3xl mb-4 tracking-wider text-[#FFD700]"
+          style={{ textShadow: "3px 3px 0 rgba(139,113,0,0.6)" }}
+        >
+          $CUP AIRDROP
+        </h1>
+        <div
+          className="p-8 sm:p-10"
+          style={{
+            background: "linear-gradient(180deg, #1a1400 0%, #0f0a00 100%)",
+            border: "3px solid #FFD700",
+            boxShadow:
+              "inset 3px 3px 0 rgba(255,244,176,0.3), inset -3px -3px 0 rgba(139,113,0,0.4), 6px 6px 0 rgba(0,0,0,0.5)",
+          }}
+        >
+          <div
+            className="font-pixel text-[10px] text-[#FFD700]/70 tracking-[0.3em] mb-3"
+          >
+            COMING SOON
+          </div>
+          <div
+            className="font-pixel text-xl sm:text-2xl text-[#FFD700] mb-4 tracking-wider"
+            style={{ textShadow: "2px 2px 0 rgba(139,113,0,0.8)" }}
+          >
+            GOES LIVE TODAY
+          </div>
+          <p className="text-sm text-[#e0d6b8]/80 leading-relaxed mb-4">
+            The $CUP claim window opens today. Check back shortly to pull your
+            airdrop allocation into your wallet.
+          </p>
+          <p className="text-[11px] text-[#e0d6b8]/50 leading-relaxed">
+            Already eligible? Your allocation is locked in on-chain — nothing to
+            do until claiming opens.
+          </p>
+        </div>
+        <p className="mt-6 text-[10px] text-[#e0d6b8]/40 font-pixel tracking-wider">
+          FOLLOW @AGENTSCUP FOR THE GO-LIVE ANNOUNCEMENT
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export default function ClaimPage() {
+  if (!CLAIM_LIVE) {
+    return <ClaimComingSoon />;
+  }
+  return <ClaimPageInner />;
+}
+
+function ClaimPageInner() {
   const { address, isConnected } = useAccount();
   const chainId = useChainId();
   const { data: ethBal } = useBalance({ address, chainId: base.id });

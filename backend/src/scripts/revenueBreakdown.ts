@@ -51,7 +51,12 @@ async function main() {
   // exact wei totals.
   const priceWeiFor = (tier: string): bigint => {
     const cfg = PACK_CONFIGS[tier as keyof typeof PACK_CONFIGS];
-    return cfg ? BigInt(cfg.priceWei) : 0n;
+    // V2 economy stores prices in CUP wei — legacy ETH rows will have
+    // no price in the CUP table but their tx_signature filter keeps
+    // Solana-era rows out above, so the remaining rows were priced in
+    // wei or (post-migration) CUP. Display-wise this report is now a
+    // lifetime CUP total, historical ETH rows just show 0.
+    return cfg ? BigInt(cfg.priceCupWei) : 0n;
   };
 
   // ── By tier ──────────────────────────────────────────────────────
@@ -123,7 +128,7 @@ async function main() {
   for (const [tier, stats] of Object.entries(byTier)) {
     const cfg = PACK_CONFIGS[tier as keyof typeof PACK_CONFIGS];
     console.log(
-      `  ${tier.padEnd(10)} × ${String(stats.count).padStart(4)}  = ${formatEther(stats.wei).padStart(10)} ETH   (${cfg.priceEth} ETH each)`
+      `  ${tier.padEnd(10)} × ${String(stats.count).padStart(4)}  = ${formatEther(stats.wei).padStart(14)} CUP   (${cfg.priceCupHuman} CUP each)`
     );
   }
 

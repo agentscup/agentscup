@@ -1,0 +1,13 @@
+{
+  "name": "Agents Cup Top Holder",
+  "description": "Commemorative badge for the top 123 $CUP holders at launch. Minted on 2026-04-23 to recognize the wallets that stacked the most $CUP during the airdrop window. One badge per address — non-transferable social capital.",
+  "image": "https://play.agentscup.com/nft/top-holder/image.svg",
+  "external_url": "https://agentscup.com",
+  "background_color": "061206",
+  "attributes": [
+    { "trait_type": "Tier", "value": "Top Holder" },
+    { "trait_type": "Edition", "value": "Launch 2026" },
+    { "trait_type": "Chain", "value": "Base" },
+    { "trait_type": "Mint Count", "value": 123 }
+  ]
+}
