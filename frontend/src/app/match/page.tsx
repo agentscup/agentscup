@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { useAccount, useBalance } from "wagmi";
+import { useAccount } from "wagmi";
 import { Agent, Formation, Position } from "@/types";
 import { FORMATIONS } from "@/components/squad/FormationPositions";
 import { getUser, getSquads } from "@/lib/api";
@@ -10,7 +10,8 @@ import { connectSocket } from "@/lib/socket";
 import {
   depositMatchEntry,
   readEntryFee,
-  formatEth,
+  readCupBalance,
+  formatCup,
   MATCH_ENTRY_FEE_WEI,
 } from "@/lib/evm";
 import dynamic from "next/dynamic";
@@ -22,10 +23,10 @@ const LiveMatchPitch = dynamic(() => import("@/components/match/LiveMatchPitch")
 import type { Socket } from "socket.io-client";
 
 /* ================================================================== */
-/*  Match flow on Base                                                 */
-/*  Entry fee: 0.001 ETH → AgentsCupMatchEscrow.depositEntry            */
-/*  Winner payout: 0.002 ETH (prize pot drained by backend operator)   */
-/*  Draw refund: 0.001 ETH each (backend forfeits each escrow slot)    */
+/*  Match flow on Base (V2 — CUP-native)                               */
+/*  Entry fee: 50,000 $CUP → AgentsCupMatchEscrowV2.depositEntry       */
+/*  Winner payout: 100,000 $CUP (prize pot drained by backend operator)*/
+/*  Draw refund: 50,000 $CUP each (backend forfeits each escrow slot)  */
 /* ================================================================== */
 
 function isCompatible(agentPos: string, slotPos: string): boolean {
@@ -106,7 +107,10 @@ interface MatchFinishData {
 
 export default function MatchPage() {
   const { address } = useAccount();
-  const { data: balance } = useBalance({ address });
+  // CUP balance drives the insufficient-funds gate. Pulled via a
+  // balanceOf call on the CUP token; polled on tab focus so the
+  // display updates after a Uniswap swap in another tab.
+  const [cupBalance, setCupBalance] = useState<bigint>(0n);
   const socketRef = useRef<Socket | null>(null);
 
   // Page state
@@ -141,9 +145,39 @@ export default function MatchPage() {
   const queueTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const feedRef = useRef<HTMLDivElement>(null);
 
+  // Poll the connected wallet's CUP balance — on mount, on wallet
+  // change, and when the tab regains focus (covers the "user bought
+  // CUP on Uniswap in another tab" flow). Silent on failure; worst
+  // case the insufficient-funds gate falls through and the wallet
+  // gives its own clearer error in the signing popup.
+  useEffect(() => {
+    if (!address) {
+      setCupBalance(0n);
+      return;
+    }
+    let cancelled = false;
+    const fetchBal = () => {
+      readCupBalance(address as `0x${string}`)
+        .then((v) => {
+          if (!cancelled) setCupBalance(v);
+        })
+        .catch(() => {});
+    };
+    fetchBal();
+    const onFocus = () => fetchBal();
+    window.addEventListener("focus", onFocus);
+    const interval = setInterval(fetchBal, 30_000);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("focus", onFocus);
+      clearInterval(interval);
+    };
+  }, [address]);
+
   // Read the current entry fee from the escrow contract on mount.
-  // We still fall back to the hardcoded default if the RPC is slow,
-  // so the UI never blocks on it.
+  // V2 escrow returns CUP wei (50_000n * 10^18 by default). We still
+  // fall back to the hardcoded default if the RPC is slow, so the
+  // UI never blocks on it.
   useEffect(() => {
     let cancelled = false;
     readEntryFee()
@@ -428,18 +462,20 @@ export default function MatchPage() {
     setIsPaying(true);
 
     try {
-      // Balance check up-front — wallet will also catch this but this
-      // gives us a friendly error before the signing popup appears.
-      if (balance && balance.value < entryFeeWei) {
+      // CUP balance check up-front — the wallet's signing popup will
+      // also catch this, but a pre-flight friendly error beats watching
+      // MetaMask throw a raw `ERC20InsufficientBalance` revert.
+      if (cupBalance < entryFeeWei) {
         setError(
-          `Insufficient ETH. Need ${formatEth(entryFeeWei)} ETH to enter — you have ${formatEth(balance.value)} ETH.`
+          `Insufficient $CUP. Need ${formatCup(entryFeeWei)} $CUP to enter — you have ${formatCup(cupBalance)}. Get more on the homepage BUY link.`
         );
         setIsPaying(false);
         return;
       }
 
-      // Deposit 0.001 ETH into a fresh escrow slot; backend pairs on
-      // the arriving tx hash + matchId.
+      // Deposit 50k $CUP into a fresh escrow slot. `depositMatchEntry`
+      // handles the approve() if allowance is insufficient — first
+      // match is a 2-tx flow, subsequent ones are single-tx.
       const { txHash, matchId: escrowMatchId } = await depositMatchEntry(entryFeeWei);
 
       socketRef.current.emit("join_queue", {
@@ -455,8 +491,14 @@ export default function MatchPage() {
       const lc = msg.toLowerCase();
       if (lc.includes("user rejected") || lc.includes("user denied")) {
         msg = "Payment cancelled";
+      } else if (
+        lc.includes("erc20insufficientbalance") ||
+        lc.includes("transferfrom failed") ||
+        lc.includes("insufficient allowance")
+      ) {
+        msg = `Insufficient $CUP. Need ${formatCup(entryFeeWei)} $CUP for entry. Get more on the homepage BUY link.`;
       } else if (lc.includes("insufficient funds") || lc.includes("exceeds the balance")) {
-        msg = `Insufficient ETH. Need ${formatEth(entryFeeWei)} ETH for entry + a little for gas.`;
+        msg = "Not enough ETH for the network fee. Top up a small amount of ETH on Base — entry is paid in $CUP but you still pay gas in ETH.";
       } else if (lc.includes("chain") && lc.includes("mismatch")) {
         msg = "Wrong network — switch your wallet to Base.";
       } else {
@@ -466,7 +508,7 @@ export default function MatchPage() {
     } finally {
       setIsPaying(false);
     }
-  }, [address, positions, formation, manager, balance, entryFeeWei]);
+  }, [address, positions, formation, manager, cupBalance, entryFeeWei]);
 
   const cancelQueue = useCallback(() => {
     socketRef.current?.emit("leave_queue");
@@ -482,11 +524,10 @@ export default function MatchPage() {
     setCurrentMinute(0);
   }, []);
 
-  // Pre-computed display strings for entry / prize pot. Wei → ETH once,
-  // reuse everywhere.
-  const entryFeeEth = formatEth(entryFeeWei);
-  const prizePotEth = formatEth(entryFeeWei * 2n);
-  const balanceEth = balance ? formatEth(balance.value) : "0";
+  // Pre-computed display strings for entry / prize pot in CUP.
+  const entryFeeLabel = formatCup(entryFeeWei);
+  const prizePotLabel = formatCup(entryFeeWei * 2n);
+  const balanceLabel = formatCup(cupBalance);
 
   // ─── Not connected ──────────────────────────────────────────
   if (!address) {
@@ -662,7 +703,7 @@ export default function MatchPage() {
                   })}
                 </div>
 
-                {/* ETH Balance Card */}
+                {/* CUP Balance Card */}
                 <div className="mt-4 p-3" style={{
                   background: "rgba(255,255,255,0.02)",
                   border: "2px solid #333",
@@ -671,11 +712,11 @@ export default function MatchPage() {
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-2">
                       <span className="font-pixel text-[7px] tracking-wider text-white">
-                        WALLET BALANCE
+                        $CUP BALANCE
                       </span>
                     </div>
                     <span className="font-pixel text-[9px] tracking-wider shrink-0" style={{ color: "#FFD700" }}>
-                      {balanceEth} ETH
+                      {balanceLabel} $CUP
                     </span>
                   </div>
                 </div>
@@ -694,16 +735,16 @@ export default function MatchPage() {
                     <div className="p-2 text-center" style={{ background: "#000", border: "1px solid #3a2d00" }}>
                       <div className="font-pixel text-[5px] text-white/40 tracking-wider mb-1">ENTRY FEE</div>
                       <div className="font-pixel text-[8px] tracking-wider" style={{ color: "#FFD700" }}>
-                        {entryFeeEth}
+                        {entryFeeLabel}
                       </div>
-                      <div className="font-pixel text-[5px] text-white/30 tracking-wider mt-0.5">ETH</div>
+                      <div className="font-pixel text-[5px] text-white/30 tracking-wider mt-0.5">$CUP</div>
                     </div>
                     <div className="p-2 text-center" style={{ background: "#000", border: "1px solid #0B6623" }}>
                       <div className="font-pixel text-[5px] text-white/40 tracking-wider mb-1">WIN</div>
                       <div className="font-pixel text-[8px] tracking-wider" style={{ color: "#2eb060" }}>
-                        +{prizePotEth}
+                        +{prizePotLabel}
                       </div>
-                      <div className="font-pixel text-[5px] text-white/30 tracking-wider mt-0.5">ETH PAYOUT</div>
+                      <div className="font-pixel text-[5px] text-white/30 tracking-wider mt-0.5">$CUP PAYOUT</div>
                     </div>
                     <div className="p-2 text-center" style={{ background: "#000", border: "1px solid #333" }}>
                       <div className="font-pixel text-[5px] text-white/40 tracking-wider mb-1">DRAW</div>
@@ -711,7 +752,7 @@ export default function MatchPage() {
                         REFUND
                       </div>
                       <div className="font-pixel text-[5px] text-white/30 tracking-wider mt-0.5">
-                        {entryFeeEth} ETH
+                        {entryFeeLabel} $CUP
                       </div>
                     </div>
                     <div className="p-2 text-center" style={{ background: "#000", border: "1px solid #00AEEF" }}>
@@ -723,7 +764,7 @@ export default function MatchPage() {
                     </div>
                   </div>
                   <p className="font-pixel text-[5px] text-white/40 tracking-wider mt-3 text-center leading-relaxed">
-                    PRIZE POT: {prizePotEth} ETH · WINNER TAKES ALL · LOSER FORFEITS ENTRY
+                    PRIZE POT: {prizePotLabel} $CUP · WINNER TAKES ALL · LOSER FORFEITS ENTRY
                   </p>
                 </div>
 
@@ -749,7 +790,7 @@ export default function MatchPage() {
                         color: "#FFD700",
                         opacity: 0.6,
                       }}>
-                        ENTRY FEE: {entryFeeEth} ETH
+                        ENTRY FEE: {entryFeeLabel} $CUP
                       </span>
                     )}
                   </div>
@@ -878,22 +919,22 @@ export default function MatchPage() {
               <div className="p-2 text-center" style={{ background: "#000", border: "1px solid #3a2d00" }}>
                 <div className="font-pixel text-[5px] text-white/40 tracking-wider mb-1">YOU PAID</div>
                 <div className="font-pixel text-[8px] tracking-wider" style={{ color: "#FFD700" }}>
-                  {entryFeeEth}
+                  {entryFeeLabel}
                 </div>
-                <div className="font-pixel text-[5px] text-white/30 tracking-wider mt-0.5">ETH</div>
+                <div className="font-pixel text-[5px] text-white/30 tracking-wider mt-0.5">$CUP</div>
               </div>
               <div className="p-2 text-center" style={{ background: "#000", border: "1px solid #0B6623" }}>
                 <div className="font-pixel text-[5px] text-white/40 tracking-wider mb-1">WIN PAYOUT</div>
                 <div className="font-pixel text-[8px] tracking-wider" style={{ color: "#2eb060" }}>
-                  +{prizePotEth}
+                  +{prizePotLabel}
                 </div>
-                <div className="font-pixel text-[5px] text-white/30 tracking-wider mt-0.5">ETH TOTAL</div>
+                <div className="font-pixel text-[5px] text-white/30 tracking-wider mt-0.5">$CUP TOTAL</div>
               </div>
               <div className="p-2 text-center" style={{ background: "#000", border: "1px solid #333" }}>
                 <div className="font-pixel text-[5px] text-white/40 tracking-wider mb-1">DRAW</div>
                 <div className="font-pixel text-[8px] tracking-wider text-white/70">REFUND</div>
                 <div className="font-pixel text-[5px] text-white/30 tracking-wider mt-0.5">
-                  {entryFeeEth} ETH
+                  {entryFeeLabel} $CUP
                 </div>
               </div>
               <div className="p-2 text-center" style={{ background: "#000", border: "1px solid #00AEEF" }}>
@@ -903,7 +944,7 @@ export default function MatchPage() {
               </div>
             </div>
             <p className="font-pixel text-[5px] text-white/40 tracking-wider mt-3 text-center leading-relaxed">
-              PRIZE POT: {prizePotEth} ETH · WINNER TAKES ALL
+              PRIZE POT: {prizePotLabel} $CUP · WINNER TAKES ALL
             </p>
           </div>
         </div>
@@ -992,7 +1033,7 @@ export default function MatchPage() {
               color: "#FFD700",
               textShadow: "0 0 8px #FFD70030",
             }}>
-              PRIZE POT: {prizePotEth} ETH
+              PRIZE POT: {prizePotLabel} $CUP
             </div>
             <div className="font-pixel text-[8px] text-white/30 tracking-[0.2em] animate-pulse">
               KICK OFF IN 3...
@@ -1069,7 +1110,8 @@ export default function MatchPage() {
         const prizeWeiBig = matchResult.prizeWei ? (() => {
           try { return BigInt(matchResult.prizeWei); } catch { return 0n; }
         })() : 0n;
-        const prizeEth = formatEth(prizeWeiBig);
+        // V2 prize pot is paid in CUP (2× entry = 100k CUP).
+        const prizeLabel = formatCup(prizeWeiBig);
 
         return (
           <div className="space-y-4 animate-[fade-in_0.5s_ease-out]">
@@ -1141,7 +1183,7 @@ export default function MatchPage() {
                   <div className="mb-3 py-2 px-3" style={{ background: "rgba(255,215,0,0.08)", border: "2px solid #FFD70050" }}>
                     <div className="font-pixel text-[6px] text-[#FFD700]/60 tracking-wider mb-1">PRIZE WON</div>
                     <div className="font-pixel text-base text-[#FFD700]" style={{ textShadow: "0 0 10px #FFD70040, 2px 2px 0 rgba(0,0,0,0.8)" }}>
-                      +{prizeEth} ETH
+                      +{prizeLabel} $CUP
                     </div>
                   </div>
                 )}
@@ -1151,7 +1193,7 @@ export default function MatchPage() {
                       ENTRY FEE REFUNDED
                     </div>
                     <div className="font-pixel text-sm text-[#eab308]" style={{ textShadow: "2px 2px 0 rgba(0,0,0,0.8)" }}>
-                      {prizeEth} ETH
+                      {prizeLabel} $CUP
                     </div>
                   </div>
                 )}

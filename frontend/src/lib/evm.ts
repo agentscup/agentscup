@@ -490,6 +490,19 @@ function assertContract(kind: keyof typeof CONTRACT_ADDRESSES): void {
   }
 }
 
+/**
+ * Format an 18-decimal CUP wei amount as a human-readable integer
+ * string with locale thousands separators. For 50_000 CUP wei
+ * (50_000n * 10n**18n) this returns "50,000". Keeps the whole-number
+ * convention because CUP amounts in the game are always round (50k /
+ * 100k / 750k etc) — no need to display fractional CUP.
+ */
+export function formatCup(wei: bigint): string {
+  const divisor = 10n ** 18n;
+  const whole = wei / divisor;
+  return whole.toLocaleString("en-US");
+}
+
 /** Convenience: format wei → human-readable ETH with up to 4 decimals. */
 export function formatEth(wei: bigint, maxDecimals = 4): string {
   const divisor = 10n ** 18n;
