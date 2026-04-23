@@ -41,29 +41,15 @@ const config: HardhatUserConfig = {
   sourcify: {
     enabled: true,
   },
+  // Etherscan V2 multi-chain: one API key covers all chains (Base,
+  // Base Sepolia, mainnet, etc). Passing the key as a plain string
+  // — instead of the old per-network `apiKey: { base: ..., baseSepolia: ... }`
+  // shape — is what tells hardhat-verify to use the unified v2 endpoint
+  // and send `chainid=8453` in each request. The old per-network config
+  // silently omits the chainid param and every verify returns
+  // "Missing chainid parameter (required for v2 api)".
   etherscan: {
-    apiKey: {
-      baseSepolia: BASESCAN_API_KEY,
-      base: BASESCAN_API_KEY,
-    },
-    customChains: [
-      {
-        network: "baseSepolia",
-        chainId: 84532,
-        urls: {
-          apiURL: "https://api-sepolia.basescan.org/api",
-          browserURL: "https://sepolia.basescan.org",
-        },
-      },
-      {
-        network: "base",
-        chainId: 8453,
-        urls: {
-          apiURL: "https://api.basescan.org/api",
-          browserURL: "https://basescan.org",
-        },
-      },
-    ],
+    apiKey: BASESCAN_API_KEY,
   },
   paths: {
     sources: "./contracts",
